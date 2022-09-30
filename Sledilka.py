@@ -599,6 +599,7 @@ def pre_start():
                                                     f"Время проведённое за компьютером в прошлый раз: "
                                                     f"{datetime.timedelta(seconds=sid)}")).start()
         start = datetime.date.today()
+        delta_t = now - start
         datasave()
     make_shortcut(name='Sledilka', target=os.path.abspath('Sledilka.exe'), path_to_save='startup')
 
