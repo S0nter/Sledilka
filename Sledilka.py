@@ -2,7 +2,6 @@ import sys
 import csv
 import os
 import datetime
-# import time
 import winshell
 import psutil
 import ctypes
