@@ -132,6 +132,8 @@ class Timer(QWidget):
         if action == copy_act:
             log('ПКМ -> Копировать')
             log(datetime.timedelta(seconds=sid))
+            add_clip(str(datetime.timedelta(seconds=sid)))
+            # threading.Thread(target=add_clip, args=(str(sid)))
         elif action == stat_act:
             log('ПКМ -> Статистика')
             print(stat)
@@ -767,6 +769,12 @@ def log(text):
     print(text)
     log_wr = open('logs.txt', 'a')
     log_wr.write(f'{text}\n')
+
+
+def add_clip(text):
+    global app
+    if app.clipboard() is not None:
+        app.clipboard().setText(text)
 
 
 if __name__ == '__main__':
