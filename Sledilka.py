@@ -1,24 +1,25 @@
-import sys
 import csv
-import os
-import datetime
-import winshell
-import psutil
 import ctypes
-import keyboard
+import datetime
+import os
+import sys
 import threading
 from ctypes import windll, wintypes
-from win32com.client import Dispatch
 from tkinter import messagebox as msg
+
+import keyboard
+import psutil
+import winshell
+from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
+from PyQt6.QtGui import QPainter, QKeySequence, QIcon, QAction, QFont
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, QSizePolicy, \
     QLayout, QGroupBox, QComboBox, QHBoxLayout
-from PyQt6.QtGui import QPainter, QKeySequence, QIcon, QAction, QFont
-from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
+from win32com.client import Dispatch
 
 sid = 0  # Время за компом (сек)
 sid_sess = 0  # Время текущей сессии (сек)
 it = 0  # Итерации
-stat = []
+stat = {}
 one_sess = 0  # Длительность сессии (до выключения, минут)
 eye_save_type = 0  # Тип выключения компа
 eye_save_time = 1  # Длительность отдыха от монитора
@@ -26,8 +27,8 @@ eye_save_time_end = datetime.datetime.strptime(
     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')  # Конец отдыха от монитора
 blocked = False
 start = datetime.date.today()
-now = datetime.date.today()
-delta_t = start - now
+today = datetime.date.today()
+delta_t = start - today
 load_iter = 0
 sett = []
 last_stat = []
@@ -54,6 +55,7 @@ class Timer(QWidget):
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.sett_w = Settings()
+        self.stat = Statistic()
         self.blk = Block()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -64,7 +66,7 @@ class Timer(QWidget):
         self.tray_icon.activated.connect(self.restore_window)
 
         t_stat = QAction("Статистика", self)
-        # t_stat.triggered.connect()
+        t_stat.triggered.connect(self.stat.show)
 
         t_sett = QAction('Настройки', self)
         t_sett.triggered.connect(self.sett_w.show)
@@ -106,7 +108,6 @@ class Timer(QWidget):
         painter.drawRoundedRect(self.rect(), 25, 25)  # Закругление краёв
 
     def eventFilter(self, source, event):  # Перетаскивание окна
-        # log('eventFilter')
         if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
             self.offset = event.pos()
         elif event.type() == QEvent.Type.MouseMove and self.offset is not None:
@@ -131,8 +132,12 @@ class Timer(QWidget):
         if action == copy_act:
             log('ПКМ -> Копировать')
             log(datetime.timedelta(seconds=sid))
+            add_clip(str(datetime.timedelta(seconds=sid)))
+            # threading.Thread(target=add_clip, args=(str(sid)))
         elif action == stat_act:
             log('ПКМ -> Статистика')
+            print(stat)
+            self.stat.show()
         elif action == sett_act:
             log('ПКМ -> Настройки')
             self.sett_w.show()
@@ -159,9 +164,7 @@ class Timer(QWidget):
         QTimer.singleShot(0, self.runtimesec)
 
     def runtimesec(self):
-        global sid, sid_sess, it, eye_save_time_end, start, saved, loaded
-        if datetime.date.today() != start:
-            start = datetime.date.today()
+        global sid, sid_sess, it, eye_save_time_end, start, saved, loaded, stat
         if thiswin != 'Win_lock_scr_real' and not blocked:
             if not loaded:
                 threading.Thread(target=dataload).start()
@@ -174,8 +177,10 @@ class Timer(QWidget):
             sid += 1
             sid_sess += 1
             it += 1
+            threading.Thread(target=add_to_stat).start()
             if sid_sess == one_sess * 60 and one_sess > 0:  # Если время сессии подошло к концу, то:
                 log('end os sess')
+                print('eeeeeeeeeeeeeeeeeeeendofsess')
                 sid_sess = 0
                 eye_save_time_end = datetime.datetime.strptime(
                     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S') + \
@@ -193,6 +198,9 @@ class Timer(QWidget):
         elif not saved and thiswin == 'Win_lock_scr_real':
             threading.Thread(target=datasave).start()
             saved = True
+        if datetime.date.today() != start:
+            start = datetime.date.today()
+            sid = 0
         QTimer.singleShot(1000, self.runtimesec)
 
     def show_block(self):
@@ -321,12 +329,15 @@ class Settings(QWidget):
 class Block(QWidget):
     def __init__(self):
         super().__init__()
-        # log('Block init')
+        log('Block __init__')
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet("background: black;")
+        self.setWindowTitle("Следилка - Блокировщик ТЕБЯ")
+        self.setWindowIcon(QIcon('icon.ico'))
         self.setWindowOpacity(0.8)
-        self.showFullScreen()
-        self.activateWindow()
+        if blocked:
+            self.showFullScreen()
+            self.activateWindow()
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignCenter)
@@ -377,6 +388,38 @@ class Block(QWidget):
             self.hide()
 
 
+class Statistic(QWidget):
+    def __init__(self):
+        super().__init__()
+        log('Statistic __init__')
+        self.setWindowTitle("Статистика")
+        self.setWindowIcon(QIcon('icon.ico'))
+        self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
+
+        self.layout = QVBoxLayout()
+        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+
+        self.stat_l = QLabel()
+        self.layout.addWidget(self.stat_l)
+        self.setLayout(self.layout)
+        self.stat_upd()
+
+    def stat_upd(self):
+        self.stat_l.setText('')
+        for key in stat:
+            if stat[key] != 0:
+                self.stat_l.setText(self.stat_l.text() + f'{key.replace(".exe", "")} - {stat[key]} сек\n')
+        QTimer.singleShot(1000, self.stat_upd)
+
+
+def add_to_stat():
+    global stat
+    if thiswin in stat:
+        stat[thiswin] += 1
+    else:
+        stat[thiswin] = 1
+
+
 def sett_upd():
     global sett
     sett = [one_sess, eye_save_type, eye_save_time, str(eye_save_time_end)]
@@ -389,10 +432,23 @@ def last_stat_upd():
 
 def dataload():
     log('dataload')
-    global sid, stat, start, delta_t, now, one_sess, eye_save_type, eye_save_time
+    global sid, stat, start, delta_t, today, one_sess, eye_save_type, eye_save_time, sett
 
     def readsett():
-        global one_sess, eye_save_type, eye_save_time, eye_save_time_end
+        global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett, sid
+        # sid = 0
+        with open('sett.slset', 'r') as file:  # Настройки
+            sett = list(csv.reader(file, delimiter=','))[0]
+            one_sess = int(sett[0])
+            eye_save_type = int(sett[1])
+            eye_save_time = int(sett[2])
+            eye_save_time_end = datetime.datetime.strptime(sett[3], '%Y-%m-%d %H:%M:%S')
+            # for ind in range(len(reader)):
+            #     reader[ind] = int(reader[ind])
+
+    def readsett_old():
+        global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett
+        sett = []
         with open('sett.slset', 'r', newline='') as f_s:  # Загрузка настроек
             s_reader = csv.reader(f_s)
             for s_row in s_reader:
@@ -401,11 +457,35 @@ def dataload():
                 eye_save_time = int(s_row[2])
                 eye_save_time_end = datetime.datetime.strptime(s_row[3], '%Y-%m-%d %H:%M:%S')
             f_s.close()
+        sett_upd()
 
     def readstat():
+        global sid
+        try:
+            os.chdir('Statistic')
+        except FileNotFoundError:
+            os.mkdir('Statistic')
+            os.chdir('Statistic')
+        try:
+            os.chdir(str(datetime.date.today()))
+        except FileNotFoundError:
+            os.mkdir(str(datetime.date.today()))
+            os.chdir(str(datetime.date.today()))
+
+        try:
+            with open('stat.csv', 'r', newline='') as file:
+                reader = csv.reader(file, delimiter=':')
+                for row in reader:
+                    stat[row[0]] = int(row[1])
+                    sid += int(row[1])
+        except FileNotFoundError:
+            make_file('stat')
+        for _ in range(2):
+            os.chdir('..')
+
+    def readstat_old():
         global stat, start, sid
         stat = []
-        last_stat_upd()
         with open('stat.csv', 'r', newline='') as f:  # Загрузка статистики
             reader = csv.reader(f)
             for row in reader:
@@ -413,21 +493,9 @@ def dataload():
                 sid = int(row[1])
                 stat.append(row)
         f.close()
+        last_stat_upd()
 
-    log('stat')
-    try:
-        readstat()
-    except FileNotFoundError:
-        log('except FileNotFoundError:')
-        make_file('stat')
-    except ValueError:
-        log('ValueError')
-        make_file('stat')
-    except IndexError:
-        log('IndexError')
-        make_file('stat')
-    readstat()
-
+    log('sett')
     try:
         readsett()
     except FileNotFoundError:
@@ -441,6 +509,21 @@ def dataload():
         make_file('s')
     finally:
         readsett()
+    log('stat')
+    try:
+        readstat()
+    except FileNotFoundError:
+        log('except FileNotFoundError:')
+        make_file('stat')
+    except ValueError:
+        log('ValueError')
+        make_file('stat')
+    except IndexError:
+        log('IndexError')
+        make_file('stat')
+    finally:
+        readstat()
+
     log(f'stat: {stat}')
     log(f'sett: {sett}')
     log('dataload.end')
@@ -449,9 +532,11 @@ def dataload():
 def make_file(type_f='stat'):
     log('makefile')
     if type_f == 'stat':
+        # last_stat_upd()
         with open('stat.csv', 'w') as file:
-            writer = csv.writer(file, delimiter=',', lineterminator='\n')
-            writer.writerow(last_stat)
+            writer = csv.writer(file, delimiter=':', lineterminator='\n')
+            writer.writerow(['sledilka.exe', 0])
+
     else:
         sett_upd()
         with open('sett.slset', 'w', newline='') as file:
@@ -495,64 +580,85 @@ def make_shortcut(name, target, path_to_save, w_dir='default', icon='default'):
 def datasave():
     log('datasave')
     global sid, start, stat
-    save_file = open('statS.csv', 'a')
-    saver = csv.writer(save_file, delimiter=',', lineterminator='\n')
-    saver.writerows(stat)
-    saver.writerow(['\n'])
-    save_file.close()
-    save_file = open('settS.slset', 'a')
-    sett_saver = csv.writer(save_file, delimiter=',', lineterminator='\n')
-    sett_saver.writerow(sett)
-    sett_saver.writerow(['\n'])
-    save_file.close()
-    last_stat_upd()
-    if len(stat) > 0 and delta_t.days > 0:  # Статистика
-        ''' Если заход в прогу был не сегодня: '''
-        print(f'delta_t: {delta_t}\nstart: {start}\nnow: {now}')
-        log('if len(stat) > 0 and delta_t.days > 0:')
-        log(f'{len(stat)} {delta_t.days}')
-        sid = 0
-        stat.append(last_stat)
-    else:
-        log('else:        stat[-1] = last_stat')
-        log(f'len(stat) = {len(stat)}, delta_t.days = {delta_t.days}')
-        stat[-1] = last_stat
-    with open('stat.csv', 'w') as file:
+    # save_file = open('statS.csv', 'a')
+    # saver = csv.writer(save_file, delimiter=',', lineterminator='\n')
+    # saver.writerows(stat)
+    # saver.writerow(['\n'])
+    # save_file.close()
+    # save_file = open('settS.slset', 'a')
+    # sett_saver = csv.writer(save_file, delimiter=',', lineterminator='\n')
+    # sett_saver.writerow(sett)
+    # sett_saver.writerow(['\n'])
+    # save_file.close()
+    # last_stat_upd()
+    with open('sett.slset', 'w') as file:  # Настройки
         writer = csv.writer(file, delimiter=',', lineterminator='\n')
-        if delta_t.days > 0:
-            if not len(stat) > 1:
-                '''Если сегодня старта проги не было и кол-во строк в документе не превышает одну:'''
-                log('if delta_t.days > 0 and not len(stat) > 1:')
-                writer.writerow(stat[-1])
-                writer.writerow(last_stat)
-                stat.append(last_stat)
-            else:
-                '''Если сегодня старта проги не было и кол-во строк в документе превышает одну:'''
-                log('elif delta_t.days > 0 and len(stat) > 1:')
-                writer.writerows(stat[:-1])
-                log(f'writer.writerows({stat[:-2]})')
-                writer.writerow(last_stat)
-                stat[-1] = last_stat
-        else:
-            if not len(stat) > 1:
-                '''Если сегодня старт проги был и кол-во строк в документе не превышает одну:'''
-                log('elif not (delta_t.days > 0) and not len(stat) > 1:')
-                writer.writerow(stat[-1])
-                stat[-1] = last_stat
-            else:
-                '''Если сегодня старт проги был и кол-во строк в документе превышает одну:'''
-                log('elif not (delta_t.days > 0) and len(stat) > 1:')
-                writer.writerows(stat[:-1])
-                writer.writerow(last_stat)
-                stat[-1] = last_stat
-    file.close()
-    log(f'stat: {stat}')
-    sett_upd()
-    with open('sett.slset', 'w') as file_s:  # Настройки
-        writer = csv.writer(file_s, delimiter=',', lineterminator='\n')
         writer.writerow(sett)
-    log(f'sett saved: {sett}')
-    log('datasave.end')
+
+    try:
+        os.chdir('Statistic')
+    except FileNotFoundError:
+        os.mkdir('Statistic')
+        os.chdir('Statistic')
+    try:
+        # значит не начался новый день
+        os.chdir(str(datetime.date.today()))
+    except FileNotFoundError:
+        # значит начался новый день
+        os.mkdir(str(datetime.date.today()))
+        os.chdir(str(datetime.date.today()))
+    with open('stat.csv', 'w') as file:
+        writer = csv.writer(file, delimiter=':', lineterminator='\n')
+        for key in stat.keys():
+            writer.writerow([key, stat[key]])
+    for _ in range(2):
+        os.chdir('..')
+
+    # def old():
+    #     if len(stat) > 0 and delta_t.days > 0:  # Статистика
+    #         ''' Если заход в прогу был не сегодня: '''
+    #         print(f'delta_t: {delta_t}\nstart: {start}\ntoday: {today}')
+    #         log('if len(stat) > 0 and delta_t.days > 0:')
+    #         log(f'{len(stat)} {delta_t.days}')
+    #         sid = 0
+    #         stat.append(last_stat)
+    #     else:
+    #         log('else:        stat[-1] = last_stat')
+    #         log(f'len(stat) = {len(stat)}, delta_t.days = {delta_t.days}')
+    #         stat[-1] = last_stat
+    #     with open('stat.csv', 'w') as file:
+    #         writer = csv.writer(file, delimiter=',', lineterminator='\n')
+    #         if delta_t.days > 0:
+    #             if not len(stat) > 1:
+    #                 '''Если сегодня старта проги не было и кол-во строк в документе не превышает одну:'''
+    #                 log('if delta_t.days > 0 and not len(stat) > 1:')
+    #                 writer.writerow(stat[-1])
+    #                 writer.writerow(last_stat)
+    #                 stat.append(last_stat)
+    #             else:
+    #                 '''Если сегодня старта проги не было и кол-во строк в документе превышает одну:'''
+    #                 log('elif delta_t.days > 0 and len(stat) > 1:')
+    #                 writer.writerows(stat[:-1])
+    #                 log(f'writer.writerows({stat[:-2]})')
+    #                 writer.writerow(last_stat)
+    #                 stat[-1] = last_stat
+    #         else:
+    #             if not len(stat) > 1:
+    #                 '''Если сегодня старт проги был и кол-во строк в документе не превышает одну:'''
+    #                 log('elif not (delta_t.days > 0) and not len(stat) > 1:')
+    #                 writer.writerow(stat[-1])
+    #                 stat[-1] = last_stat
+    #             else:
+    #                 '''Если сегодня старт проги был и кол-во строк в документе превышает одну:'''
+    #                 log('elif not (delta_t.days > 0) and len(stat) > 1:')
+    #                 writer.writerows(stat[:-1])
+    #                 writer.writerow(last_stat)
+    #                 stat[-1] = last_stat
+    #     file.close()
+    #     log(f'stat: {stat}')
+    #     sett_upd()
+    #     log(f'sett saved: {sett}')
+    #     log('datasave.end')
 
 
 def thiswin_f():
@@ -584,23 +690,35 @@ def thiswin_f():
 
 
 def pre_start():
-    global now, delta_t, start
+    global today, delta_t, start, eye_save_time_end
     log('pre_start')
     print(f'до конца отдыха от мон: {(eye_save_time_end - datetime.datetime.now()).total_seconds()}')
-    if eye_save_time * 60 > (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0 and one_sess != 0:
+    print(f'eye_save_time: {eye_save_time}\n'
+          f'eye_save_time_end: {eye_save_time_end}\n'
+          f'one_sess: {one_sess}\n'
+          f'blocked: {blocked}')
+    if eye_save_time * 60 > (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0 and one_sess > 0:
+        print('prestart-eyesavesssssssssssssssssssssssssssssssssssssss')
         eye_save()
+    elif one_sess > 0 and eye_save_time * 60 < (eye_save_time_end - datetime.datetime.now()).total_seconds():
+        print('prestart_seeeeeeeecondif')
+        eye_save_time_end = datetime.datetime.strptime(
+            datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S') + \
+            datetime.timedelta(minutes=eye_save_time)
+    print(f'eye_save_time_end after upd: {eye_save_time_end}\n'
+          f'blocked: {blocked}')
     thiswin_f()
-    now = datetime.date.today()
-    delta_t = now - start
+    today = datetime.date.today()
+    delta_t = today - start
     if delta_t.days > 0:
         log(f'if delta_t.days ({delta_t.days}) > 0: ')
         threading.Thread(target=msg.showinfo, args=("Информация",
                                                     f"Время проведённое за компьютером в прошлый раз: "
                                                     f"{datetime.timedelta(seconds=sid)}")).start()
-        start = datetime.date.today()
-        delta_t = now - start
         datasave()
-    make_shortcut(name='Sledilka', target=os.path.abspath('Sledilka.exe'), path_to_save='startup')
+        start = datetime.date.today()
+        delta_t = today - start
+    make_shortcut('Sledilka', os.path.abspath('Sledilka.exe'), 'startup')
 
 
 def eye_save():
@@ -651,6 +769,12 @@ def log(text):
     print(text)
     log_wr = open('logs.txt', 'a')
     log_wr.write(f'{text}\n')
+
+
+def add_clip(text):
+    global app
+    if app.clipboard() is not None:
+        app.clipboard().setText(text)
 
 
 if __name__ == '__main__':
