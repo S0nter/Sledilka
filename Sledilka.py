@@ -1,4 +1,5 @@
 import csv
+import json
 import ctypes
 import datetime
 import os
@@ -6,20 +7,20 @@ import sys
 import threading
 from ctypes import windll, wintypes
 from tkinter import messagebox as msg
-
 import keyboard
 import psutil
 import winshell
 from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
-from PyQt6.QtGui import QPainter, QKeySequence, QIcon, QAction, QFont
+from PyQt6.QtGui import QPainter, QIcon, QAction, QFont
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, QSizePolicy, \
-    QLayout, QGroupBox, QComboBox, QHBoxLayout
+    QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget
 from win32com.client import Dispatch
 
 sid = 0  # Время за компом (сек)
 sid_sess = 0  # Время текущей сессии (сек)
 it = 0  # Итерации
-stat = {}
+stat = {}   # Сегодняшняя статистика
+full_stat = {str(datetime.date.today()): {}}   # Статистика вся, кроме сегодня
 one_sess = 0  # Длительность сессии (до выключения, минут)
 eye_save_type = 0  # Тип выключения компа
 eye_save_time = 1  # Длительность отдыха от монитора
@@ -31,7 +32,6 @@ today = datetime.date.today()
 delta_t = start - today
 load_iter = 0
 sett = []
-last_stat = []
 thiswin = ''
 saved = False
 loaded = True
@@ -57,6 +57,9 @@ class Timer(QWidget):
         self.sett_w = Settings()
         self.stat = Statistic()
         self.blk = Block()
+
+        self._actions()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.time_show)
@@ -65,28 +68,50 @@ class Timer(QWidget):
         self.tray_icon.setIcon(QIcon('icon.ico'))
         self.tray_icon.activated.connect(self.restore_window)
 
-        t_stat = QAction("Статистика", self)
-        t_stat.triggered.connect(self.stat.show)
-
-        t_sett = QAction('Настройки', self)
-        t_sett.triggered.connect(self.sett_w.show)
-
-        t_show = QAction('Показать', self)
-        t_show.triggered.connect(self.show)
-
-        t_hide = QAction('Скрыть', self)
-        t_hide.triggered.connect(self.hide)
+        self.context = QMenu(self)
+        self.context.addAction(self.copy)
+        # self.copy_act.setShortcut(QKeySequence.StandardKey.Copy)
+        self.context.addSeparator()
+        self.context.addAction(self.a_stat)
+        self.context.addAction(self.a_sett)
+        self.context.addSeparator()
+        self.context.addAction(self.a_hide)
 
         self.tray_menu = QMenu()
 
-        self.tray_menu.addAction(t_sett)
-        self.tray_menu.addAction(t_stat)
+        self.tray_menu.addAction(self.a_sett)
+        self.tray_menu.addAction(self.a_stat)
         self.tray_menu.addSeparator()
-        self.tray_menu.addAction(t_show)
-        self.tray_menu.addAction(t_hide)
+        self.tray_menu.addAction(self.a_show)
+        self.tray_menu.addAction(self.a_hide)
         self.tray_icon.setContextMenu(self.tray_menu)
         self.tray_icon.show()
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.runtimesec)
+
         self.runtime()
+
+    def _actions(self):
+        self.copy = QAction('Копировать', self)
+        self.copy.triggered.connect(self.sid_add)
+        # self.copy.triggered.connect()
+
+        self.a_stat = QAction('Статистика', self)
+        self.a_stat.triggered.connect(self.stat.show)
+
+        self.a_sett = QAction('Настройки', self)
+        self.a_sett.triggered.connect(self.sett_w.show)
+
+        self.a_show = QAction('Показать', self)
+        self.a_show.triggered.connect(self.show)
+
+        self.a_hide = QAction('Скрыть', self)
+        self.a_hide.triggered.connect(self.hide)
+
+    @staticmethod
+    def sid_add():
+        add_clip()
 
     def showEvent(self, event):
         self.in_tray = False
@@ -118,34 +143,36 @@ class Timer(QWidget):
         return super().eventFilter(source, event)
 
     def contextMenuEvent(self, e):  # Контекстное меню
-        log('contextMenuEvent')
-        context = QMenu(self)
-        copy_act = context.addAction("Копировать")
-        copy_act.setShortcut(QKeySequence.StandardKey.Copy)
-        context.addSeparator()
-        stat_act = context.addAction("Статистика")
-        sett_act = context.addAction("Настройки")
-        context.addSeparator()
-        quit_act = context.addAction("Скрыть")
-        action = context.exec(self.mapToGlobal(e.pos()))
-
-        if action == copy_act:
-            log('ПКМ -> Копировать')
-            log(datetime.timedelta(seconds=sid))
-            add_clip(str(datetime.timedelta(seconds=sid)))
-            # threading.Thread(target=add_clip, args=(str(sid)))
-        elif action == stat_act:
-            log('ПКМ -> Статистика')
-            print(stat)
-            self.stat.show()
-        elif action == sett_act:
-            log('ПКМ -> Настройки')
-            self.sett_w.show()
-        elif action == quit_act:
-            log('ПКМ -> Quit')
-            datasave()
-            self.hide()
-            self.in_tray = True
+        # print(e)
+        self.context.exec(self.mapToGlobal(e.pos()))
+        # log('contextMenuEvent')
+        # context = QMenu(self)
+        # copy_act = context.addAction(self.copy)
+        # # copy_act.setShortcut(QKeySequence.StandardKey.Copy)
+        # context.addSeparator()
+        # stat_act = context.addAction("Статистика")
+        # sett_act = context.addAction("Настройки")
+        # context.addSeparator()
+        # quit_act = context.addAction("Скрыть")
+        # action = context.exec(self.mapToGlobal(e.pos()))
+        #
+        # if action == copy_act:
+        #     log('ПКМ -> Копировать')
+        #     log(datetime.timedelta(seconds=sid))
+        #     add_clip(str(datetime.timedelta(seconds=sid)))
+        #     # threading.Thread(target=add_clip, args=(str(sid)))
+        # elif action == stat_act:
+        #     log('ПКМ -> Статистика')
+        #     print(stat)
+        #     self.stat.show()
+        # elif action == sett_act:
+        #     log('ПКМ -> Настройки')
+        #     self.sett_w.show()
+        # elif action == quit_act:
+        #     log('ПКМ -> Quit')
+        #     datasave()
+        #     self.hide()
+        #     self.in_tray = True
 
     def restore_window(self, reason):  # Возвращение окна из трея
         if reason != QSystemTrayIcon.ActivationReason.Context:
@@ -161,7 +188,8 @@ class Timer(QWidget):
         font.setPointSize(30)
         self.time_show.setFont(font)
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
-        QTimer.singleShot(0, self.runtimesec)
+
+        self.timer.start(1000)
 
     def runtimesec(self):
         global sid, sid_sess, it, eye_save_time_end, start, saved, loaded, stat
@@ -201,7 +229,8 @@ class Timer(QWidget):
         if datetime.date.today() != start:
             start = datetime.date.today()
             sid = 0
-        QTimer.singleShot(1000, self.runtimesec)
+            full_stat[start] = stat
+            stat = {'Sledilka.exe': 0}
 
     def show_block(self):
         if blocked:
@@ -396,20 +425,66 @@ class Statistic(QWidget):
         self.setWindowIcon(QIcon('icon.ico'))
         self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
 
-        self.layout = QVBoxLayout()
-        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        self.mainlay = QVBoxLayout()
+        self.layout = QHBoxLayout()
+
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.setMovable(True)
 
         self.stat_l = QLabel()
+        self.stat_l.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.layout.addWidget(self.stat_l)
         self.setLayout(self.layout)
-        self.stat_upd()
+        self.stat_make()
+
+        self.updater = QTimer()
+        self.updater.timeout.connect(self.stat_upd)
+        self.updater.start(1000)
+
+    def stat_make(self):
+        for i in reversed(full_stat):
+            # for key in full_stat[i]:
+            #     text = QLabel()
+            #     # print('eeeeeeee',key, full_stat[i][key])
+            #     if full_stat[i][key] != 0 and key != 'Win_lock_scr_real':
+            #         text.setText(self.stat_l.text() +
+            #                         f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=full_stat[i][key])}\n')
+            self.make_tab(sort(full_stat[i]), i)
+        self.layout.addWidget(self.tabs)
+
+    def make_tab(self, d, name):
+        text = QLabel('')
+        text.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        summ = 0
+        for key in d:
+            if d[key] != 0 and key != 'Win_lock_scr_real':
+                text.setText(text.text() +
+                             f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=d[key])}\n')
+                summ += d[key]
+        if text.text().replace(' ', '') != '':
+            text.setText(text.text() + f'\nВсего: {datetime.timedelta(seconds=summ)}')
+            self.tabs.addTab(text, name)
 
     def stat_upd(self):
-        self.stat_l.setText('')
-        for key in stat:
-            if stat[key] != 0:
-                self.stat_l.setText(self.stat_l.text() + f'{key.replace(".exe", "")} - {stat[key]} сек\n')
-        QTimer.singleShot(1000, self.stat_upd)
+        # self.stat_l = QLabel('')
+        self.stat_l.setText('Сегодня:\n')
+        for key in sort(stat):
+            if stat[key] != 0 and key != 'Win_lock_scr_real':
+                self.stat_l.setText(self.stat_l.text() +
+                                    f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=stat[key])}\n')
+        self.stat_l.setText(self.stat_l.text() + f'\nВсего: {datetime.timedelta(seconds=sid)}')
+
+
+def sort(dict_):
+    sorted_dict = {}
+    # sorted_keys = list(sorted(dict, key=dict.get))[::-1]
+    sorted_keys = list(reversed(sorted(dict_, key=dict_.get)))
+
+    for w in sorted_keys:
+        sorted_dict[w] = dict_[w]
+
+    return sorted_dict
 
 
 def add_to_stat():
@@ -425,14 +500,9 @@ def sett_upd():
     sett = [one_sess, eye_save_type, eye_save_time, str(eye_save_time_end)]
 
 
-def last_stat_upd():
-    global last_stat
-    last_stat = [str(start), sid]
-
-
 def dataload():
     log('dataload')
-    global sid, stat, start, delta_t, today, one_sess, eye_save_type, eye_save_time, sett
+    global sid, stat, start, delta_t, today, one_sess, eye_save_type, eye_save_time, sett, full_stat
 
     def readsett():
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett, sid
@@ -446,21 +516,22 @@ def dataload():
             # for ind in range(len(reader)):
             #     reader[ind] = int(reader[ind])
 
-    def readsett_old():
-        global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett
-        sett = []
-        with open('sett.slset', 'r', newline='') as f_s:  # Загрузка настроек
-            s_reader = csv.reader(f_s)
-            for s_row in s_reader:
-                one_sess = int(s_row[0])
-                eye_save_type = int(s_row[1])
-                eye_save_time = int(s_row[2])
-                eye_save_time_end = datetime.datetime.strptime(s_row[3], '%Y-%m-%d %H:%M:%S')
-            f_s.close()
-        sett_upd()
+    # def readsett_old():
+    #     global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett
+    #     sett = []
+    #     with open('sett.slset', 'r', newline='') as f_s:  # Загрузка настроек
+    #         s_reader = csv.reader(f_s)
+    #         for s_row in s_reader:
+    #             one_sess = int(s_row[0])
+    #             eye_save_type = int(s_row[1])
+    #             eye_save_time = int(s_row[2])
+    #             eye_save_time_end = datetime.datetime.strptime(s_row[3], '%Y-%m-%d %H:%M:%S')
+    #         f_s.close()
+    #     sett_upd()
 
     def readstat():
         global sid
+        sid = 0
         try:
             os.chdir('Statistic')
         except FileNotFoundError:
@@ -471,7 +542,6 @@ def dataload():
         except FileNotFoundError:
             os.mkdir(str(datetime.date.today()))
             os.chdir(str(datetime.date.today()))
-
         try:
             with open('stat.csv', 'r', newline='') as file:
                 reader = csv.reader(file, delimiter=':')
@@ -480,20 +550,51 @@ def dataload():
                     sid += int(row[1])
         except FileNotFoundError:
             make_file('stat')
+            print('mkfl')
         for _ in range(2):
             os.chdir('..')
 
-    def readstat_old():
-        global stat, start, sid
-        stat = []
-        with open('stat.csv', 'r', newline='') as f:  # Загрузка статистики
-            reader = csv.reader(f)
-            for row in reader:
-                start = datetime.datetime.strptime(row[0], '%Y-%m-%d').date()
-                sid = int(row[1])
-                stat.append(row)
-        f.close()
-        last_stat_upd()
+    def readallstat():
+        try:
+            os.chdir('Statistic')
+        except FileNotFoundError:
+            os.mkdir('Statistic')
+            os.chdir('Statistic')
+        dirs = [e for e in os.listdir() if os.path.isdir(e)]
+        print(dirs)
+        if len(dirs) > 0:
+            for d in dirs:
+                full_stat[d] = {}
+                print(d)
+                os.chdir(d)
+                try:
+                    with open('stat.csv', 'r', newline='') as file:
+                        reader = csv.reader(file, delimiter=':')
+                        for row in reader:
+                            print('rrrrrrrrrrrrrrrrrrrrrr', row[0])
+                            if row[0] not in ['LockApp.exe']:
+                                full_stat[d][row[0]] = int(row[1])
+                    if d == str(datetime.date.today()):
+                        full_stat[str(datetime.date.today())] = stat
+                        del full_stat[str(datetime.date.today())]
+                    os.chdir('..')
+                except:
+                    pass
+        os.chdir('..')
+
+
+
+    # def readstat_old():
+    #     global stat, start, sid
+    #     stat = []
+    #     with open('stat.csv', 'r', newline='') as f:  # Загрузка статистики
+    #         reader = csv.reader(f)
+    #         for row in reader:
+    #             start = datetime.datetime.strptime(row[0], '%Y-%m-%d').date()
+    #             sid = int(row[1])
+    #             stat.append(row)
+    #     f.close()
+    #     last_stat_upd()
 
     log('sett')
     try:
@@ -523,9 +624,23 @@ def dataload():
         make_file('stat')
     finally:
         readstat()
+    # try:
+        readallstat()
+    # except FileNotFoundError:
+    #     log('except FileNotFoundError:')
+    #     make_file('stat')
+    # except ValueError:
+    #     log('ValueError')
+    #     make_file('stat')
+    # except IndexError:
+    #     log('IndexError')
+    #     make_file('stat')
+    # finally:
+    #     readallstat()
 
     log(f'stat: {stat}')
     log(f'sett: {sett}')
+    log(f'full_stat: {json.dumps(full_stat, indent=4)}')
     log('dataload.end')
 
 
@@ -558,23 +673,30 @@ def make_shortcut(name, target, path_to_save, w_dir='default', icon='default'):
                                     str(name) + '.lnk')
     else:
         path_to_save = os.path.join(path_to_save, str(name) + '.lnk')
-    if icon == 'default':
-        icon = target
-    if w_dir == 'default':
-        w_dir = os.path.dirname(target)
-    # # С помощью метода Dispatch, обьявляем работу с Wscript
-    # # (работа с ярлыками, реестром и прочей системной информацией в windows)
-    shell = Dispatch('WScript.Shell')
-    # Создаём ярлык.
-    shortcut = shell.CreateShortCut(path_to_save)
-    # Путь к файлу, к которому делаем ярлык.
-    shortcut.Targetpath = target
-    # Путь к рабочей папке.
-    shortcut.WorkingDirectory = w_dir
-    # Тырим иконку.
-    shortcut.IconLocation = icon
-    # Обязательное действо, сохраняем ярлык.
-    shortcut.save()
+    if os.path.exists(path_to_save):
+        do = False
+    else:
+        do = True
+    if do:
+        if icon == 'default':
+            icon = target
+        if w_dir == 'default':
+            w_dir = os.path.dirname(target)
+        # # С помощью метода Dispatch, обьявляем работу с Wscript
+        # # (работа с ярлыками, реестром и прочей системной информацией в windows)
+        shell = Dispatch('WScript.Shell')
+        # Создаём ярлык.
+        shortcut = shell.CreateShortCut(path_to_save)
+        # Путь к файлу, к которому делаем ярлык.
+        shortcut.Targetpath = target
+        # Путь к рабочей папке.
+        shortcut.WorkingDirectory = w_dir
+        # Тырим иконку.
+        shortcut.IconLocation = icon
+        # Обязательное действо, сохраняем ярлык.
+        shortcut.save()
+    else:
+        print('hhhhhhhhhhhhhhhahahaha')
 
 
 def datasave():
@@ -664,8 +786,8 @@ def datasave():
 def thiswin_f():
     global thiswin
     pid = wintypes.DWORD()
-    active = ctypes.windll.user32.GetForegroundWindow()
-    active_window = ctypes.windll.user32.GetWindowThreadProcessId(active, ctypes.byref(pid))
+    # active = ctypes.windll.user32.GetForegroundWindow()
+    # active_window = ctypes.windll.user32.GetWindowThreadProcessId(active, ctypes.byref(pid))
     user32 = ctypes.windll.User32
     if user32.GetForegroundWindow() == 0 or user32.GetForegroundWindow() == 67370 or \
             user32.GetForegroundWindow() == 1901390:
@@ -771,18 +893,24 @@ def log(text):
     log_wr.write(f'{text}\n')
 
 
-def add_clip(text):
+def add_clip():
     global app
     if app.clipboard() is not None:
-        app.clipboard().setText(text)
+        app.clipboard().setText(str(sid))
+
+#
+# def add_clip(text):
+#     global app
+#     if app.clipboard() is not None:
+#         app.clipboard().setText(str(text))
 
 
 if __name__ == '__main__':
     log('main')
-    dataload()
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon('icon.ico'))
+    dataload()
     window = Timer()
     pre_start()
     window.show()
-    app.setWindowIcon(QIcon('icon.ico'))
     app.exec()
