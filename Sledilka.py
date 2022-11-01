@@ -1,40 +1,49 @@
 import csv
-import json
-import ctypes
 import datetime
+import json
 import os
 import sys
 import threading
-from ctypes import windll, wintypes
 from tkinter import messagebox as msg
 import keyboard
-import psutil
-import winshell
 from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
 from PyQt6.QtGui import QPainter, QIcon, QAction, QFont
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, QSizePolicy, \
-    QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget
-from win32com.client import Dispatch
+    QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton
+from activewindow import getInfo, getTitle
+
+platform = sys.platform
+if platform == 'win32':
+    from ctypes import windll
+    import winshell
+    from win32com.client import Dispatch
 
 sid = 0  # Время за компом (сек)
+limited = False
+limit = 0  # Возможное колличество времени за день (сек)
 sid_sess = 0  # Время текущей сессии (сек)
-it = 0  # Итерации
-stat = {}   # Сегодняшняя статистика
-full_stat = {str(datetime.date.today()): {}}   # Статистика вся, кроме сегодня
+stat = {}  # Сегодняшняя статистика
+full_stat = {str(datetime.date.today()): {}}  # Статистика вся, кроме сегодня
 one_sess = 0  # Длительность сессии (до выключения, минут)
 eye_save_type = 0  # Тип выключения компа
-eye_save_time = 1  # Длительность отдыха от монитора
-eye_save_time_end = datetime.datetime.strptime(
-    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')  # Конец отдыха от монитора
+eye_save_time = 1  # Длительность отдыха от монитора (минут)
+eye_save_time_end = datetime.datetime.now().replace(microsecond=0)  # Конец отдыха от монитора
+# eye_save_time_end = datetime.datetime.strptime(
+#     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')
 blocked = False
 start = datetime.date.today()
 today = datetime.date.today()
 delta_t = start - today
-load_iter = 0
 sett = []
-thiswin = ''
+thisapp = ''
+wintitle = ''
 saved = False
 loaded = True
+dirs = []
+txt_OK = 'OK'
+txt_cancel = 'Отмена'
+txt_apply = 'Применить'
+too_little_time = 1
 
 
 class Timer(QWidget):
@@ -89,13 +98,12 @@ class Timer(QWidget):
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.runtimesec)
-
+        self.it = 0  # Итерации
         self.runtime()
 
     def _actions(self):
         self.copy = QAction('Копировать', self)
         self.copy.triggered.connect(self.sid_add)
-        # self.copy.triggered.connect()
 
         self.a_stat = QAction('Статистика', self)
         self.a_stat.triggered.connect(self.stat.show)
@@ -184,27 +192,27 @@ class Timer(QWidget):
     def runtime(self):
         log('runtime')
         global sid
+
         font = self.time_show.font()
         font.setPointSize(30)
         self.time_show.setFont(font)
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
-
+        self.stat.updater.start(1000)
         self.timer.start(1000)
 
     def runtimesec(self):
-        global sid, sid_sess, it, eye_save_time_end, start, saved, loaded, stat
-        if thiswin != 'Win_lock_scr_real' and not blocked:
+        global sid, sid_sess, eye_save_time_end, start, saved, loaded, stat
+        if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked:
             if not loaded:
                 threading.Thread(target=dataload).start()
                 loaded = True
             saved = False
             if self.isHidden() and not self.in_tray:
                 self.show()
-            self.time_show.setText(str(datetime.timedelta(seconds=sid)))
-            self.time_show.update()
+            self.time_show.setText(str(datetime.timedelta(seconds=sid + 1)))
             sid += 1
             sid_sess += 1
-            it += 1
+            self.it += 1
             threading.Thread(target=add_to_stat).start()
             if sid_sess == one_sess * 60 and one_sess > 0:  # Если время сессии подошло к концу, то:
                 log('end os sess')
@@ -218,12 +226,12 @@ class Timer(QWidget):
             elif sid_sess > one_sess * 60:
                 sid_sess = 0
             else:  # Иначе:
-                if it == 60:  # Сейвы каждую минуту
+                if self.it == 60:  # Сейвы каждую минуту
                     threading.Thread(target=datasave).start()
-                    it = 0
+                    self.it = 0
         elif blocked:
             self.hide()
-        elif not saved and thiswin == 'Win_lock_scr_real':
+        elif not saved and thisapp not in ['LockApp.exe', 'LockScr']:
             threading.Thread(target=datasave).start()
             saved = True
         if datetime.date.today() != start:
@@ -231,6 +239,7 @@ class Timer(QWidget):
             sid = 0
             full_stat[start] = stat
             stat = {'Sledilka.exe': 0}
+        # QTimer.singleShot(1000, self.runtimesec)
 
     def show_block(self):
         if blocked:
@@ -242,12 +251,32 @@ class Timer(QWidget):
 class Settings(QWidget):
     def __init__(self):
         super().__init__()
+        self.s_eye_rest_label = QLabel('Требовать отдыха от монитора на')
         global one_sess
         log('Settings __init__')
         self.setWindowTitle("Настройки")
         self.setWindowIcon(QIcon('icon.ico'))
         self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
 
+        self.layout = QVBoxLayout()
+        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+
+        self._set_eye_save()
+
+        self._set_buttons()
+
+        self.setLayout(self.layout)
+
+    # def set_s_eye_type(self):
+    # if self.s_one_sess_ch.isChecked():
+    #     self.s_eye_sess.setEnabled(True)
+    #     self.s_eye.setEnabled(True)
+    # else:
+    #     self.s_eye_sess.setEnabled(False)
+    #     self.s_eye.setEnabled(False)
+
+    def _set_eye_save(self):
+        global one_sess
         self.s_one_sess_gr = QGroupBox('Отдых от монитора')  # Отдых от монитора:
         self.s_one_sess_gr.setCheckable(True)
 
@@ -293,7 +322,6 @@ class Settings(QWidget):
         self.s_eye_sess_end_lay.addWidget(self.s_eye_sess_end_label)
         self.s_eye_sess_end_lay.addWidget(self.s_eye_sess_end_list)
 
-        self.s_eye_rest_label = QLabel('Требовать отдыха от монитора на')
         self.s_eye_rest_spin = QSpinBox()
         self.s_eye_rest_spin.setRange(1, 1440)
         self.s_eye_rest_spin.setValue(eye_save_time)
@@ -310,31 +338,35 @@ class Settings(QWidget):
         self.s_one_sess_gr_lay.addLayout(self.s_eye_sess_end_lay)
         self.s_one_sess_gr_lay.addLayout(self.s_eye_rest_lay)
 
-        # if one_sess > 0:
-        #     self.s_one_sess_gr.setChecked(True)
-        #     self.s_eye.setValue(one_sess)
-        # else:
-        #     self.s_eye_sess.setDisabled(True)
-        #     self.s_eye.setDisabled(True)
-        layout = QVBoxLayout()
-        layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
-        layout.addWidget(self.s_one_sess_gr)
+        self.layout.addWidget(self.s_one_sess_gr)
 
-        self.setLayout(layout)
+    def _set_buttons(self):
+        self.butt_lay = QHBoxLayout()
+        self.butt_lay.setAlignment(Qt.AlignmentFlag.AlignRight)
 
-    # def set_s_eye_type(self):
-    # if self.s_one_sess_ch.isChecked():
-    #     self.s_eye_sess.setEnabled(True)
-    #     self.s_eye.setEnabled(True)
-    # else:
-    #     self.s_eye_sess.setEnabled(False)
-    #     self.s_eye.setEnabled(False)
+        self.butt_ok = QPushButton()
+        self.butt_ok.setText(txt_OK)
+        self.butt_ok.clicked.connect(self.sett_save)
+        self.butt_ok.clicked.connect(self.close)
+        self.butt_ok.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.butt_lay.addWidget(self.butt_ok)
 
-    def closeEvent(self, event):
-        global one_sess, eye_save_type, eye_save_time
-        # log(self.s_eye_sess_end_list.currentText())
-        print(f'closesett, sid = {sid}')
-        event.ignore()
+        self.butt_cancel = QPushButton()
+        self.butt_cancel.setText(txt_cancel)
+        self.butt_cancel.clicked.connect(self.close)
+        self.butt_cancel.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.butt_lay.addWidget(self.butt_cancel)
+
+        self.butt_apply = QPushButton()
+        self.butt_apply.setText(txt_apply)
+        self.butt_apply.clicked.connect(self.sett_save)
+        self.butt_apply.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.butt_lay.addWidget(self.butt_apply)
+
+        self.layout.addLayout(self.butt_lay)
+
+    def sett_save(self):
+        global one_sess, eye_save_type, eye_save_time, eye_save_time_end
         if self.s_one_sess_gr.isChecked():  # Длительность сеанса
             one_sess = self.s_eye.value()
             if self.s_eye_sess_end_list.currentText() == 'Выключить компьютер':  # Определение типа выкла
@@ -348,11 +380,12 @@ class Settings(QWidget):
             elif self.s_eye_sess_end_list.currentText() == 'Экран блокировки':
                 eye_save_type = 4
             eye_save_time = self.s_eye_rest_spin.value()
+            # eye_save_time_end = datetime.datetime.now().replace(microsecond=0) + \
+            #     datetime.timedelta(minutes=eye_save_time)
         else:
             self.s_eye.setValue(1)
             one_sess = 0
         datasave()
-        self.hide()
 
 
 class Block(QWidget):
@@ -384,12 +417,18 @@ class Block(QWidget):
         self.b_timer.setFont(QFont("Arial", 40))
         layout.addWidget(self.b_timer)
         self.noclo()
-        self.blocksec()
+
+        self.blocksec_timer = QTimer()
+        self.blocksec_timer.timeout.connect(self.blocksec)
+        self.blocksec_timer.start(1000)
 
     def noclo(self):
-        if not self.isActiveWindow() and blocked:
+        global blocked
+        if not self.isActiveWindow() and blocked and eye_save_type == 3:
             self.up()
-        if blocked:
+        if blocked and eye_save_type == 3:
+            if (eye_save_time_end - datetime.datetime.now()).total_seconds() < 1:
+                blocked = False
             QTimer.singleShot(1, self.noclo)
         else:
             QTimer.singleShot(369, self.noclo)
@@ -411,7 +450,6 @@ class Block(QWidget):
         self.b_timer.setText(str(
             datetime.timedelta(seconds=int((eye_save_time_end - datetime.datetime.now()).total_seconds()))))
         self.b_timer.update()
-        QTimer.singleShot(1000, self.blocksec)
         if (eye_save_time_end - datetime.datetime.now()).total_seconds() < 1:  # Если время отдыха закончилось,
             blocked = False  # то закрывать
             self.hide()
@@ -437,17 +475,17 @@ class Statistic(QWidget):
         self.layout.addWidget(self.stat_l)
         self.setLayout(self.layout)
         self.stat_make()
-
+        # QTimer.singleShot(1000, self.stat_upd)
         self.updater = QTimer()
         self.updater.timeout.connect(self.stat_upd)
-        self.updater.start(1000)
+        # self.updater.start(1000)
 
     def stat_make(self):
         for i in reversed(full_stat):
             # for key in full_stat[i]:
             #     text = QLabel()
             #     # print('eeeeeeee',key, full_stat[i][key])
-            #     if full_stat[i][key] != 0 and key != 'Win_lock_scr_real':
+            #     if full_stat[i][key] != 0 and key not in ['LockApp.exe', 'LockScr']:
             #         text.setText(self.stat_l.text() +
             #                         f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=full_stat[i][key])}\n')
             self.make_tab(sort(full_stat[i]), i)
@@ -458,7 +496,7 @@ class Statistic(QWidget):
         text.setAlignment(Qt.AlignmentFlag.AlignLeft)
         summ = 0
         for key in d:
-            if d[key] != 0 and key != 'Win_lock_scr_real':
+            if d[key] != 0 and key not in ['LockApp.exe', 'LockScr']:
                 text.setText(text.text() +
                              f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=d[key])}\n')
                 summ += d[key]
@@ -470,10 +508,11 @@ class Statistic(QWidget):
         # self.stat_l = QLabel('')
         self.stat_l.setText('Сегодня:\n')
         for key in sort(stat):
-            if stat[key] != 0 and key != 'Win_lock_scr_real':
+            if stat[key] != 0 and key not in ['LockApp.exe', 'LockScr']:
                 self.stat_l.setText(self.stat_l.text() +
                                     f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=stat[key])}\n')
         self.stat_l.setText(self.stat_l.text() + f'\nВсего: {datetime.timedelta(seconds=sid)}')
+        QTimer.singleShot(1000, self.stat_upd)
 
 
 def sort(dict_):
@@ -489,10 +528,10 @@ def sort(dict_):
 
 def add_to_stat():
     global stat
-    if thiswin in stat:
-        stat[thiswin] += 1
+    if thisapp in stat:
+        stat[thisapp] += 1
     else:
-        stat[thiswin] = 1
+        stat[thisapp] = 1
 
 
 def sett_upd():
@@ -530,18 +569,23 @@ def dataload():
     #     sett_upd()
 
     def readstat():
-        global sid
+        global sid, start
         sid = 0
+        stat_exists = True
         try:
             os.chdir('Statistic')
         except FileNotFoundError:
             os.mkdir('Statistic')
             os.chdir('Statistic')
+            stat_exists = False
         try:
             os.chdir(str(datetime.date.today()))
         except FileNotFoundError:
             os.mkdir(str(datetime.date.today()))
             os.chdir(str(datetime.date.today()))
+            if stat_exists:
+                start = datetime.date.today() - datetime.timedelta(days=1)
+                print('noooooooooooot toaaaaaay')
         try:
             with open('stat.csv', 'r', newline='') as file:
                 reader = csv.reader(file, delimiter=':')
@@ -555,14 +599,15 @@ def dataload():
             os.chdir('..')
 
     def readallstat():
+        global start, dirs
         try:
             os.chdir('Statistic')
         except FileNotFoundError:
             os.mkdir('Statistic')
             os.chdir('Statistic')
         dirs = [e for e in os.listdir() if os.path.isdir(e)]
-        print(dirs)
-        if len(dirs) > 0:
+        print(f'{dirs = }')
+        if len(dirs) > 1:
             for d in dirs:
                 full_stat[d] = {}
                 print(d)
@@ -571,18 +616,20 @@ def dataload():
                     with open('stat.csv', 'r', newline='') as file:
                         reader = csv.reader(file, delimiter=':')
                         for row in reader:
-                            print('rrrrrrrrrrrrrrrrrrrrrr', row[0])
+                            # print('rrrrrrrrrrrrrrrrrrrrrr', row[0])
                             if row[0] not in ['LockApp.exe']:
                                 full_stat[d][row[0]] = int(row[1])
                     if d == str(datetime.date.today()):
                         full_stat[str(datetime.date.today())] = stat
                         del full_stat[str(datetime.date.today())]
                     os.chdir('..')
-                except:
-                    pass
+                except FileNotFoundError:
+                    make_file('stat')
+                    full_stat[d]['sledilka.exe'] = 0
+                    os.chdir('..')
         os.chdir('..')
-
-
+        # for i in range(len(dirs)):
+        #     dirs[i] =
 
     # def readstat_old():
     #     global stat, start, sid
@@ -624,7 +671,7 @@ def dataload():
         make_file('stat')
     finally:
         readstat()
-    # try:
+        # try:
         readallstat()
     # except FileNotFoundError:
     #     log('except FileNotFoundError:')
@@ -695,8 +742,6 @@ def make_shortcut(name, target, path_to_save, w_dir='default', icon='default'):
         shortcut.IconLocation = icon
         # Обязательное действо, сохраняем ярлык.
         shortcut.save()
-    else:
-        print('hhhhhhhhhhhhhhhahahaha')
 
 
 def datasave():
@@ -713,6 +758,7 @@ def datasave():
     # sett_saver.writerow(['\n'])
     # save_file.close()
     # last_stat_upd()
+    sett_upd()
     with open('sett.slset', 'w') as file:  # Настройки
         writer = csv.writer(file, delimiter=',', lineterminator='\n')
         writer.writerow(sett)
@@ -784,30 +830,9 @@ def datasave():
 
 
 def thiswin_f():
-    global thiswin
-    pid = wintypes.DWORD()
-    # active = ctypes.windll.user32.GetForegroundWindow()
-    # active_window = ctypes.windll.user32.GetWindowThreadProcessId(active, ctypes.byref(pid))
-    user32 = ctypes.windll.User32
-    if user32.GetForegroundWindow() == 0 or user32.GetForegroundWindow() == 67370 or \
-            user32.GetForegroundWindow() == 1901390:
-        thiswin = 'Win_lock_scr_real'
-    # 10553666 - return code for unlocked workstation1
-    # 0 - return code for locked workstation1
-    #
-    # 132782 - return code for unlocked workstation2
-    # 67370 -  return code for locked workstation2
-    #
-    # 3216806 - return code for unlocked workstation3
-    # 1901390 - return code for locked workstation3
-    #
-    # 197944 - return code for unlocked workstation4
-    # 0 -  return code for locked workstation4
-    else:
-        pid = pid.value
-        for item in psutil.process_iter():
-            if pid == item.pid:
-                thiswin = item.name()
+    global thisapp, wintitle
+    thisapp = getInfo()['App2']
+    wintitle = getTitle()
     threading.Timer(1, thiswin_f).start()
 
 
@@ -815,32 +840,53 @@ def pre_start():
     global today, delta_t, start, eye_save_time_end
     log('pre_start')
     print(f'до конца отдыха от мон: {(eye_save_time_end - datetime.datetime.now()).total_seconds()}')
-    print(f'eye_save_time: {eye_save_time}\n'
-          f'eye_save_time_end: {eye_save_time_end}\n'
-          f'one_sess: {one_sess}\n'
-          f'blocked: {blocked}')
+    print(f'{eye_save_time = }\n'
+          f'{str(eye_save_time_end) = }\n'
+          f'{one_sess = }\n'
+          f'{blocked = }')
     if eye_save_time * 60 > (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0 and one_sess > 0:
         print('prestart-eyesavesssssssssssssssssssssssssssssssssssssss')
         eye_save()
     elif one_sess > 0 and eye_save_time * 60 < (eye_save_time_end - datetime.datetime.now()).total_seconds():
         print('prestart_seeeeeeeecondif')
-        eye_save_time_end = datetime.datetime.strptime(
-            datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S') + \
-            datetime.timedelta(minutes=eye_save_time)
+        eye_save_time_end = datetime.datetime.now().replace(microsecond=0) + datetime.timedelta(minutes=eye_save_time)
     print(f'eye_save_time_end after upd: {eye_save_time_end}\n'
-          f'blocked: {blocked}')
+          f'{blocked = }')
+    if limited and sid > limit:
+        limit_out()
     thiswin_f()
     today = datetime.date.today()
     delta_t = today - start
     if delta_t.days > 0:
         log(f'if delta_t.days ({delta_t.days}) > 0: ')
-        threading.Thread(target=msg.showinfo, args=("Информация",
-                                                    f"Время проведённое за компьютером в прошлый раз: "
-                                                    f"{datetime.timedelta(seconds=sid)}")).start()
+        for i in dirs:
+            print(f'from dirs {i = }')
+            if i == str(datetime.date.today()):
+                dirs.remove(i)
+                print(f'from dirs deleted {i}')
+        past_sid = 0
+        past_day = max(dirs)
+        # print(f'{past_day = }')
+        print(f'{past_day = }')
+        for key in full_stat[past_day]:
+            past_sid += full_stat[past_day][key]
+            print(f'added: {full_stat[past_day][key]}')
+        if past_sid < too_little_time:
+            threading.Thread(target=msg.showinfo, args=("Информация",
+                                                        "В прошлый раз вы подозрительно мало "
+                                                        "сидели за компьютером")).start()
+        else:
+            threading.Thread(target=msg.showinfo, args=("Информация",
+                                                        f"Время проведённое за компьютером в прошлый раз: "
+                                                        f"{datetime.timedelta(seconds=past_sid)}")).start()
         datasave()
         start = datetime.date.today()
         delta_t = today - start
     make_shortcut('Sledilka', os.path.abspath('Sledilka.exe'), 'startup')
+
+
+def limit_out():
+    ...
 
 
 def eye_save():
@@ -897,6 +943,7 @@ def add_clip():
     global app
     if app.clipboard() is not None:
         app.clipboard().setText(str(sid))
+
 
 #
 # def add_clip(text):
