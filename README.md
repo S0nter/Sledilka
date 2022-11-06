@@ -8,6 +8,7 @@
 ### Изменения
  - Существенно улучшена производительность
  - Добавлены лимиты
+ - Уменьшен размер файла
 
 # EN
 
@@ -16,4 +17,7 @@ Sledilka is a program that controls the time, runs behind the computer, and turn
 
 ## 1.2
 
-### Changeы
+### Changes
+ - Perfomance improved 
+ - Limits added
+ - Lower file weight
