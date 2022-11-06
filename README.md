@@ -3,12 +3,11 @@
 ## Что это такое?
 Следилка - это программа, которая следит за временем, проведённым за компьютером, и выключает его, когда требуется
 
-## 1.2
+## 1.2.1
 
 ### Изменения
- - Исправлено уведомление о времени при старте, добавлена пасхалка
- - Добавлены кнопки сохранения в настройках
- - Исправлено поведение программы после выключнеия, если выключение производилось на заблокированном компьютере
+ - Существенно улучшена производительность
+ - Добавлены лимиты
 
 # EN
 
@@ -17,7 +16,4 @@ Sledilka is a program that controls the time, runs behind the computer, and turn
 
 ## 1.2
 
-### Changes
-   - Fixed notification about time of previous day, added easter egg
-   - Added save buttons in the settings
-   - Fixed the behavior of the program after shutdown, if the shutdown was performed on a locked computer
+### Changeы
