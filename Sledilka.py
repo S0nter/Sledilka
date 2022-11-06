@@ -733,7 +733,7 @@ def dataload():
                     chdir('..')
                 except FileNotFoundError:
                     make_file('stat')
-                    full_stat[d]['sledilka.exe'] = 0
+                    full_stat[d]['Sledilka.exe'] = 0
                     chdir('..')
         chdir('..')
         # for i in range(len(dirs)):
@@ -836,7 +836,7 @@ def make_file(type_f='stat'):
         # last_stat_upd()
         with open('stat.csv', 'w') as file:
             writer = csv.writer(file, delimiter=':', lineterminator='\n')
-            writer.writerow(['sledilka.exe', 0])
+            writer.writerow(['Sledilka.exe', 0])
 
     else:
         sett_upd()
@@ -1172,7 +1172,7 @@ def log(text):
 def add_clip():
     global app
     if app.clipboard() is not None:
-        app.clipboard().setText(str(sid))
+        app.clipboard().setText(str(datetime.timedelta(seconds=sid)))
 
 
 def to_bool(_str):
