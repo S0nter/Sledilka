@@ -1,23 +1,15 @@
-# RU
-
-## Что это такое?
-Следилка - это программа, которая следит за временем, проведённым за компьютером, и выключает его, когда требуется
-
-## 1.2.1
-
-### Изменения
- - Существенно улучшена производительность
- - Добавлены лимиты
- - Уменьшен размер файла
-
-# EN
-
 ## What is this?
 Sledilka is a program that controls the time, runs behind the computer, and turns it off when required.
 
-## 1.2
+## 1.2.2
 
 ### Changes
- - Perfomance improved 
- - Limits added
- - Lower file weight
+ - Notifications changed
+ - Work on linux
+ - Color themes
+
+## How to compile?
+Run this command:
+``` 
+<Python binary> -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt6 --disable-console Sledilka.py
+```
