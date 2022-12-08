@@ -1,18 +1,18 @@
 import csv
 import datetime
-from os import listdir, chdir, mkdir, path, popen
-from sys import argv, platform as pt
-from time import sleep
+import json
 from multiprocessing import Process
 from multiprocessing.managers import SharedMemoryManager
+from os import listdir, chdir, mkdir, path, popen, getcwd
+from sys import argv, platform as pt
 from threading import Thread
-from tkinter import messagebox as msg
-from keyboard import press_and_release
+from time import sleep
 from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
-from PyQt6.QtGui import QPainter, QIcon, QAction, QFont
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox,\
-    QSizePolicy, \
-    QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton
+from PyQt6.QtGui import QPainter, QIcon, QFont, QColor, QAction
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
+    QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
+    QDialog, QLineEdit, QMessageBox  # QAction,
+from darkdetect import theme as th
 
 platform = pt
 if platform == 'win32':
@@ -23,42 +23,61 @@ if platform == 'win32':
 limited = False
 limit = 0  # Возможное колличество времени за день (мин)
 lim_off_type = 0  # Тип выкла (выкл, гибернация, перезагрузка, заблок экран, экран блок)
-# lim_end = datetime.datetime.now().replace(microsecond=0)  # Конец лимит (не нужен, т. к. будет определяться через sid)
 lim_activated = False
 sid = 0  # Время за компом (сек)
 sid_sess = 0  # Время текущей сессии (сек)
 stat = {}  # Сегодняшняя статистика
 full_stat = {str(datetime.date.today()): {}}  # Статистика вся, кроме сегодня
 
-eye_save_enabled = False
 one_sess = 0  # Длительность сессии (до выключения, минут) (если ноль - отключено)
 eye_save_type = 0  # Тип выключения компа
 eye_save_time = 1  # Длительность отдыха от монитора (минут)
 eye_save_time_end = datetime.datetime.now().replace(microsecond=0)  # Конец отдыха от монитора
+eye_save_enabled = False
 # eye_save_time_end = datetime.datetime.strptime(
 #     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')
 blocked = False
 start = datetime.date.today()
 today = datetime.date.today()
 delta_t = start - today
-sett = []
+# sett = []
+sett = {'one_sess': 0,       #
+        'eye_save_type': 0,  #
+        'eye_save_time': 1,  #
+        'eye_save_time_end': datetime.datetime.now().replace(microsecond=0),  #
+        'eye_save_enabled': False,  #
+        'limited': False,  #
+        'limit': 0,  #
+        'lim_off_type': 0,
+        'theme': 'Light'}  #
 thisapp = 'Sledilka.exe'
 wintitle = ''
 saved = False
 loaded = True
 dirs = []
-txt_OK = 'OK'
-txt_cancel = 'Отмена'
-txt_apply = 'Применить'
 too_little_time = 1
 phrases = {
+    'stat title': 'Статистика',
     'shutdown': 'Выключить компьютер',
     'restart': 'Перезагрузка',
     'hiber': 'Гибернация',
     'to lock scr': 'Заблокировать экран',
     'lock scr': 'Экран блокировки',
-    'block title': 'Следилка - Блокировщик ТЕБЯ'
+    'block title': 'Следилка - Блокировщик ТЕБЯ',
+    'add time': 'Добавить',
+    'needs monitor rest': 'Требуется отдых от монитора',
+    'time adder title': 'Добавить время',
+    'application': 'Приложение',
+    'ok': 'OK',
+    'cancel': 'Отмена',
+    'apply': 'Применить',
+    'whats datas?': 'На какую дату добавить?',
+    'today': 'Сегодня',
+    'app name': 'Следилка',
+    'dark': 'Тёмная',
+    'light': 'Светлая'
 }
+theme = th()
 
 
 class Timer(QWidget):
@@ -68,7 +87,7 @@ class Timer(QWidget):
         super().__init__()
         self.setFixedSize(QSize(145, 110))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-        self.setWindowTitle("Следилка")
+        self.setWindowTitle(phrases['app name'])
         self.setWindowIcon(QIcon('icon.ico'))
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -77,6 +96,10 @@ class Timer(QWidget):
         self.installEventFilter(self)
         self.time_show = QLabel(str(datetime.timedelta(seconds=sid)))
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if theme == 'Light':
+            self.time_show.setStyleSheet("QLabel { color : black; }")
+        else:
+            self.time_show.setStyleSheet("QLabel { color : white; }")
 
         self.sett_w = Settings()
         self.stat = Statistic()
@@ -154,7 +177,7 @@ class Timer(QWidget):
         self.in_tray = True
 
     def closeEvent(self, event):  # Запрет закрытия окна
-        # event.ignore()
+        event.ignore()
         self.hide()
 
     def paintEvent(self, ev):  # Создание окна
@@ -162,13 +185,15 @@ class Timer(QWidget):
             self.setFixedSize(165, 120)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.renderHints(painter).Antialiasing)  # Убирание некрасивых краёв PyQt6
-        # painter.setRenderHint(QPainter.Antialiasing)                                                   # PySide6
-        painter.setBrush(Qt.GlobalColor.white)
+        # painter.setRenderHint(QPainter.Antialiasing)
+        if theme == 'Light':
+            painter.setBrush(Qt.GlobalColor.white)
+        else:
+            painter.setBrush(QColor(43, 43, 43))
         painter.drawRoundedRect(self.rect(), 25, 25)  # Закругление краёв
 
     def eventFilter(self, source, event):  # Перетаскивание окна
         if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-            # self.offset = event.position()      # PySide6
             self.offset = event.pos()            # PyQt6
         elif event.type() == QEvent.Type.MouseMove and self.offset is not None:
             self.move(self.pos() - self.offset + event.pos())
@@ -190,10 +215,10 @@ class Timer(QWidget):
     def runtime(self):
         log('runtime')
         global sid
-        font = self.time_show.font()
-        font.setPointSize(30)
-        self.time_show.setFont(font)
+        self.time_show.setFont(QFont('Segoe UI', 30))
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        # self.time_show.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+
         self.stat.updater.start()
         self.timer.start()
         self.checker_timer.start()
@@ -212,6 +237,9 @@ class Timer(QWidget):
             # ???
             Thread(target=add_to_stat).start()
             # ???
+            if self.it == 60:  # Сейвы каждую минуту
+                Thread(target=datasave).start()
+                self.it = 0
             if sid_sess >= one_sess * 60 and eye_save_enabled:  # Если время сессии подошло к концу, то:
                 log('end of sess')
                 print('eeeeeeeeeeeeeeeeeeeendofsess')
@@ -223,10 +251,6 @@ class Timer(QWidget):
                 eye_save()
             elif sid_sess > one_sess * 60:
                 sid_sess = 0
-            else:  # Иначе:
-                if self.it == 60:  # Сейвы каждую минуту
-                    Thread(target=datasave).start()
-                    self.it = 0
             if limited and sid >= limit * 60:
                 limit_out()
         elif blocked or lim_activated:
@@ -241,6 +265,10 @@ class Timer(QWidget):
             full_stat[str(start)] = stat
             start = datetime.date.today()
             stat = {'Sledilka.exe': 0}
+        if theme == 'Light':
+            self.time_show.setStyleSheet("QLabel { color : black; }")
+        else:
+            self.time_show.setStyleSheet("QLabel { color : white; }")
 
     def runtimesec(self):
         global sid, sid_sess
@@ -249,46 +277,6 @@ class Timer(QWidget):
             self.time_show.setText(str(datetime.timedelta(seconds=sid + 1)))
             sid += 1
             sid_sess += 1
-
-    def runtimesec_old(self):
-        global sid, sid_sess, eye_save_time_end, start, saved, loaded, stat
-        if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked:
-            if not loaded:
-                Thread(target=dataload).start()
-                loaded = True
-            saved = False
-            if self.isHidden() and not self.in_tray:
-                self.show()
-            self.time_show.setText(str(datetime.timedelta(seconds=sid + 1)))
-            sid += 1
-            sid_sess += 1
-            self.it += 1
-            Thread(target=add_to_stat).start()
-            if sid_sess >= one_sess * 60 and eye_save_enabled:  # Если время сессии подошло к концу, то:
-                log('end of sess')
-                print('eeeeeeeeeeeeeeeeeeeendofsess')
-                sid_sess = 0
-                eye_save_time_end = datetime.datetime.strptime(
-                    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S') + \
-                    datetime.timedelta(minutes=eye_save_time)
-                Thread(target=datasave).start()
-                eye_save()
-            elif sid_sess > one_sess * 60:
-                sid_sess = 0
-            else:  # Иначе:
-                if self.it == 60:  # Сейвы каждую минуту
-                    Thread(target=datasave).start()
-                    self.it = 0
-        elif blocked:
-            self.hide()
-        elif not saved and thisapp not in ['LockApp.exe', 'LockScr']:
-            Thread(target=datasave).start()
-            saved = True
-        if datetime.date.today() != start:
-            start = datetime.date.today()
-            sid = 0
-            full_stat[start] = stat
-            stat = {'Sledilka.exe': 0}
 
     def show_block(self):
         print('show_block')
@@ -302,10 +290,9 @@ class Settings(QWidget):
     def __init__(self):
         super().__init__()
         self.s_eye_rest_label = QLabel('Требовать отдыха от монитора на')
-        global one_sess
         log('Settings __init__')
         self.setWindowTitle("Настройки")
-        self.setWindowIcon(QIcon('icon.ico'))
+        self.setWindowIcon(app_icon)
         self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
 
         self.layout = QVBoxLayout()
@@ -313,8 +300,9 @@ class Settings(QWidget):
 
         self._set_eye_save()
         self._set_limits()
+        self._set_color()
 
-        self.updateInterface()
+        self.update_interface()
         self._set_buttons()
 
         self.setLayout(self.layout)
@@ -328,7 +316,6 @@ class Settings(QWidget):
     #     self.s_eye.setEnabled(False)
 
     def _set_eye_save(self):
-        global one_sess
         self.s_one_sess_gr = QGroupBox('Отдых от монитора')  # Отдых от монитора:
         self.s_one_sess_gr.setCheckable(True)
 
@@ -401,25 +388,37 @@ class Settings(QWidget):
 
         self.layout.addWidget(self.s_lim_gr)
 
+    def _set_color(self):
+        self.s_theme_gr = QGroupBox('Тема оформления')
+
+        self.s_theme_list = QComboBox()
+        self.s_theme_list.addItem(phrases['dark'])
+        self.s_theme_list.addItem(phrases['light'])
+
+        self.s_theme_gr_lay = QHBoxLayout(self.s_theme_gr)
+        self.s_theme_gr_lay.addWidget(self.s_theme_list)
+
+        self.layout.addWidget(self.s_theme_gr)
+
     def _set_buttons(self):
         self.butt_lay = QHBoxLayout()
         self.butt_lay.setAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.butt_ok = QPushButton()
-        self.butt_ok.setText(txt_OK)
+        self.butt_ok.setText(phrases['ok'])
         self.butt_ok.clicked.connect(self.sett_save)
         self.butt_ok.clicked.connect(self.close)
         self.butt_ok.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.butt_lay.addWidget(self.butt_ok)
 
         self.butt_cancel = QPushButton()
-        self.butt_cancel.setText(txt_cancel)
+        self.butt_cancel.setText(phrases['cancel'])
         self.butt_cancel.clicked.connect(self.close)
         self.butt_cancel.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.butt_lay.addWidget(self.butt_cancel)
 
         self.butt_apply = QPushButton()
-        self.butt_apply.setText(txt_apply)
+        self.butt_apply.setText(phrases['apply'])
         self.butt_apply.clicked.connect(self.sett_save)
         self.butt_apply.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.butt_lay.addWidget(self.butt_apply)
@@ -427,7 +426,8 @@ class Settings(QWidget):
         self.layout.addLayout(self.butt_lay)
 
     def sett_save(self):
-        global one_sess, eye_save_type, eye_save_time, eye_save_time_end, eye_save_enabled, limited, lim_off_type, limit
+        global one_sess, eye_save_type, eye_save_time, eye_save_time_end, eye_save_enabled, limited, lim_off_type, \
+            limit, theme
         one_sess = self.s_eye.value()
         eye_save_enabled = self.s_one_sess_gr.isChecked()  # Длительность сеанса
         # eye_save_time_end = datetime.datetime.now().replace(microsecond=0) + \
@@ -456,11 +456,17 @@ class Settings(QWidget):
         elif self.s_lim_end_list.currentText() == phrases['lock scr']:
             lim_off_type = 4
         limit = self.s_limit.value()
-        print(f'{limited = }, {self.s_lim_end_list.currentText() = } - {lim_off_type = }, {limit = }')
-        print(f'{eye_save_enabled = }')
+        print(f'{sett["limited"] = }, {self.s_lim_end_list.currentText() = } - {sett["lim_off_type"] = }, '
+              f'{sett["limit"] = }')
+        print(f'{sett["eye_save_enabled"] = }')
+
+        if self.s_theme_list.currentText() == phrases['dark']:
+            theme = 'Dark'
+        else:
+            theme = 'Light'
         datasave()
 
-    def updateInterface(self):
+    def update_interface(self):
         self.s_one_sess_gr.setChecked(eye_save_enabled)
         self.s_eye.setValue(one_sess)
         if eye_save_type == 0:  # Определение типа выкла
@@ -488,8 +494,17 @@ class Settings(QWidget):
             self.s_lim_end_list.setCurrentText(phrases['lock scr'])
         self.s_limit.setValue(limit)
 
+        if theme == 'Dark':
+            self.s_theme_list.setCurrentText(phrases['dark'])
+        else:
+            self.s_theme_list.setCurrentText(phrases['light'])
+
     def showEvent(self, event):
-        self.updateInterface()
+        self.update_interface()
+
+    def closeEvent(self, event):  # Если удалить - при закрытии будет завершаться приложение
+        event.ignore()
+        self.hide()
 
 
 class Block(QWidget):
@@ -547,7 +562,6 @@ class Block(QWidget):
 
     def up(self):
         print('up')
-        press_and_release('Esc')
         print(f'1 {self.isHidden() = }, {self.isActiveWindow() = }')
         # if not self.isActiveWindow() and wintitle != phrases['block title']:
         #     self.hide()
@@ -558,6 +572,8 @@ class Block(QWidget):
     def closeEvent(self, event):
         if blocked or lim_activated:
             event.ignore()
+        else:
+            self.hide()
 
     def blocksec(self):
         global blocked, lim_activated
@@ -583,12 +599,15 @@ class Statistic(QWidget):
     def __init__(self):
         super().__init__()
         log('Statistic __init__')
-        self.setWindowTitle("Статистика")
+        self.setWindowTitle(phrases['stat title'])
         self.setWindowIcon(QIcon('icon.ico'))
         self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
 
-        # self.mainlay = QVBoxLayout()
-        self.layout = QHBoxLayout()
+        self.adder = TimeAdder(self)
+
+        self.mainlay = QHBoxLayout()
+        self.layout = QVBoxLayout()
+        self.layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -596,8 +615,15 @@ class Statistic(QWidget):
 
         self.stat_l = QLabel()
         self.stat_l.setAlignment(Qt.AlignmentFlag.AlignLeft)
+
+        self.add_time = QPushButton()
+        self.add_time.setText(phrases['add time'])
+        self.add_time.clicked.connect(self.adder.show)
+
         self.layout.addWidget(self.stat_l)
-        self.setLayout(self.layout)
+        self.layout.addWidget(self.add_time)
+        self.mainlay.addLayout(self.layout)
+        self.setLayout(self.mainlay)
         self.stat_make()
         self.updater = QTimer()
         self.updater.timeout.connect(self.stat_upd)
@@ -612,7 +638,7 @@ class Statistic(QWidget):
             #         text.setText(self.stat_l.text() +
             #                         f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=full_stat[i][key])}\n')
             self.make_tab(sort(full_stat[i]), i)
-        self.layout.addWidget(self.tabs)
+        self.mainlay.addWidget(self.tabs)
 
     def make_tab(self, d, name):
         text = QLabel('')
@@ -638,8 +664,65 @@ class Statistic(QWidget):
         self.stat_l.setText(self.stat_l.text() + f'\nВсего: {datetime.timedelta(seconds=sid)}')
         # QTimer.singleShot(1000, self.stat_upd)
 
-    # def showEvent(self, event):
-    #     readstat()
+    def closeEvent(self, event):  # Если удалить - при закрытии будет завершаться приложение
+        event.ignore()
+        self.hide()
+
+
+class TimeAdder(QDialog):
+    def __init__(self, parent):
+        super(TimeAdder, self).__init__(parent)
+        log('TimeAdder __init__')
+
+        self.setWindowTitle(phrases['time adder title'])
+
+        self.layout = QVBoxLayout()
+        self.app_name = QLineEdit()
+        self.app_name.setPlaceholderText(phrases['application'])
+
+        self.time = QSpinBox()
+        self.time.setRange(1, 1440)
+        self.time.setSuffix(' мин.')
+
+        self.dates = QComboBox()
+        self.dates.setWhatsThis(phrases['whats datas?'])
+        a_today = str(datetime.date.today())
+        for date in reversed(dirs):
+            if a_today == date:
+                self.dates.addItem(phrases['today'])
+            else:
+                self.dates.addItem(date)
+
+        buttons = QHBoxLayout()
+        self.ok_b = QPushButton(phrases['ok'])
+        self.ok_b.clicked.connect(self.ok)
+        self.cancel_b = QPushButton(phrases['cancel'])
+        self.cancel_b.clicked.connect(self.reject)
+        buttons.addWidget(self.ok_b)
+        buttons.addWidget(self.cancel_b)
+
+        self.layout.addWidget(self.dates)
+        self.layout.addWidget(self.app_name)
+        self.layout.addWidget(self.time)
+        self.layout.addLayout(buttons)
+        self.setLayout(self.layout)
+
+    def ok(self):
+        global stat, sid
+        app_name = self.app_name.text().strip()
+        if app_name != '':
+            if self.dates.currentText() == phrases['today']:
+                if app_name in stat:
+                    stat[app_name] += self.time.value() * 60
+                else:
+                    stat[app_name] = self.time.value() * 60
+                sid += self.time.value() * 60
+            else:
+                if app_name in full_stat:
+                    full_stat[app_name] += self.time.value() * 60
+                else:
+                    full_stat[app_name] = self.time.value() * 60
+            self.accept()
 
 
 def sort(dict_):
@@ -663,8 +746,15 @@ def add_to_stat():
 
 def sett_upd():
     global sett
-    sett = [one_sess, eye_save_type, eye_save_time, str(eye_save_time_end), eye_save_enabled, limited, limit,
-            lim_off_type]
+    sett = {'one_sess': one_sess,
+            'eye_save_type': eye_save_type,
+            'eye_save_time': eye_save_time,
+            'eye_save_time_end': str(eye_save_time_end),
+            'eye_save_enabled': eye_save_enabled,
+            'limited': limited,
+            'limit': limit,
+            'lim_off_type': lim_off_type,
+            'theme': theme}
 
 
 def dataload():
@@ -673,39 +763,35 @@ def dataload():
 
     def readsett():
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett, sid, eye_save_enabled, limited, limit, \
-            lim_off_type
+            lim_off_type, theme
         # sid = 0
-        with open('sett.slset', 'r') as file:  # Настройки
-            sett = list(csv.reader(file, delimiter=','))[0]
-            print(f'{sett = }')
-            one_sess = int(sett[0])
-            eye_save_type = int(sett[1])
-            eye_save_time = int(sett[2])
-            eye_save_time_end = datetime.datetime.strptime(sett[3], '%Y-%m-%d %H:%M:%S')
-            # try:
-            eye_save_enabled = to_bool(sett[4])
-            limited = to_bool(sett[5])
-            limit = int(sett[6])
-            lim_off_type = int(sett[7])
-            print('удалось загрузить новые настройки ')
-            # except Exception:
-            #     print('не удалось новые настройки загрузить')
-            print(f'{eye_save_enabled = }')
-            # for ind in range(len(reader)):
-            #     reader[ind] = int(reader[ind])
-
-    # def readsett_old():
-    #     global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett
-    #     sett = []
-    #     with open('sett.slset', 'r', newline='') as f_s:  # Загрузка настроек
-    #         s_reader = csv.reader(f_s)
-    #         for s_row in s_reader:
-    #             one_sess = int(s_row[0])
-    #             eye_save_type = int(s_row[1])
-    #             eye_save_time = int(s_row[2])
-    #             eye_save_time_end = datetime.datetime.strptime(s_row[3], '%Y-%m-%d %H:%M:%S')
-    #         f_s.close()
-    #     sett_upd()
+        try:
+            with open('sett.slset', 'r') as file:  # Настройки
+                sett = dict(json.load(file))
+                one_sess = sett['one_sess']
+                eye_save_type = sett['eye_save_type']
+                eye_save_time = sett['eye_save_time']
+                eye_save_time_end = datetime.datetime.strptime(sett['eye_save_time_end'], '%Y-%m-%d %H:%M:%S')
+                eye_save_enabled = sett['eye_save_enabled']
+                limited = sett['limited']
+                limit = sett['limit']
+                lim_off_type = sett['lim_off_type']
+                theme = sett['theme']
+                print('sett:', sett)
+        except:
+            with open('sett.slset', 'r') as file:
+                l = list(csv.reader(file, delimiter=','))[0]
+                one_sess = int(l[0])
+                eye_save_type = int(l[1])
+                eye_save_time = int(l[2])
+                eye_save_time_end = datetime.datetime.strptime(l[3], '%Y-%m-%d %H:%M:%S')
+                eye_save_enabled = to_bool(l[4])
+                limited = to_bool(l[5])
+                limit = int(l[6])
+                lim_off_type = int(l[7])
+                print(f'{sett = }')
+                print('удалось загрузить старые настройки ')
+            make_file('sett')
 
     def readallstat():
         global start, dirs
@@ -738,31 +824,18 @@ def dataload():
         chdir('..')
         # for i in range(len(dirs)):
         #     dirs[i] =
-
-    # def readstat_old():
-    #     global stat, start, sid
-    #     stat = []
-    #     with open('stat.csv', 'r', newline='') as f:  # Загрузка статистики
-    #         reader = csv.reader(f)
-    #         for row in reader:
-    #             start = datetime.datetime.strptime(row[0], '%Y-%m-%d').date()
-    #             sid = int(row[1])
-    #             stat.append(row)
-    #     f.close()
-    #     last_stat_upd()
-
     log('sett')
     try:
         readsett()
     except FileNotFoundError:
         log('except FileNotFoundError:')
-        make_file('s')
+        make_file('sett')
     except ValueError:
         log('ValueError')
-        make_file('s')
+        make_file('sett')
     except IndexError:
         log('IndexError')
-        make_file('s')
+        make_file('sett')
     finally:
         readsett()
     log('stat')
@@ -837,13 +910,10 @@ def make_file(type_f='stat'):
         with open('stat.csv', 'w') as file:
             writer = csv.writer(file, delimiter=':', lineterminator='\n')
             writer.writerow(['Sledilka.exe', 0])
-
-    else:
+    elif type_f == 'sett':
         sett_upd()
-        with open('sett.slset', 'w', newline='') as file:
-            writer = csv.writer(file, delimiter=',', lineterminator='\n')
-            writer.writerow(sett)
-    file.close()
+        with open('sett.slset', 'w') as file:
+            json.dump(sett, file, ensure_ascii=False)
 
 
 def make_shortcut(name, target, path_to_save, w_dir='default', icon='default'):
@@ -883,24 +953,38 @@ def make_shortcut(name, target, path_to_save, w_dir='default', icon='default'):
         shortcut.save()
 
 
+def add_to_startup():
+    if platform == 'win32':
+        make_shortcut('Sledilka', path.abspath('Sledilka.exe'), 'startup')
+    elif platform == 'linux':
+        user = path.expanduser('~')
+        with open(f'{user}/.config/autostart/Sledilka.desktop', 'w') as file:
+            file.write('[Desktop Entry]\n'
+                       'Type=Application\n'
+                       f'Exec={getcwd()}/Sledilka\n'
+                       'Hidden=false\n'
+                       'NoDisplay=false\n'
+                       'X-GNOME-Autostart-enabled=true\n'
+                       'Name[en_IN]=Sledilka\n'
+                       'Name[ru_RU]=Следилка\n'
+                       f'Name={phrases["app name"]}\n'
+                       'Comment[en_IN]=\n'
+                       'Comment=')
+        print(path.expanduser('~'))
+
+
 def datasave():
     log('datasave')
     global sid, start
-    # save_file = open('statS.csv', 'a')
-    # saver = csv.writer(save_file, delimiter=',', lineterminator='\n')
-    # saver.writerows(stat)
-    # saver.writerow(['\n'])
-    # save_file.close()
-    # save_file = open('settS.slset', 'a')
-    # sett_saver = csv.writer(save_file, delimiter=',', lineterminator='\n')
-    # sett_saver.writerow(sett)
-    # sett_saver.writerow(['\n'])
-    # save_file.close()
     # last_stat_upd()
     sett_upd()
+    print('sett1')
     with open('sett.slset', 'w') as file:  # Настройки
-        writer = csv.writer(file, delimiter=',', lineterminator='\n')
-        writer.writerow(sett)
+        print('opened')
+        json.dump(sett, file, ensure_ascii=False)
+        # writer = csv.writer(file, delimiter=',', lineterminator='\n')
+        # writer.writerow(sett)
+    print('sett2')
     statsave()
 
 
@@ -924,154 +1008,62 @@ def statsave():
     for _ in range(2):
         chdir('..')
 
-    # def old():
-    #     if len(stat) > 0 and delta_t.days > 0:  # Статистика
-    #         ''' Если заход в прогу был не сегодня: '''
-    #         print(f'delta_t: {delta_t}\nstart: {start}\ntoday: {today}')
-    #         log('if len(stat) > 0 and delta_t.days > 0:')
-    #         log(f'{len(stat)} {delta_t.days}')
-    #         sid = 0
-    #         stat.append(last_stat)
-    #     else:
-    #         log('else:        stat[-1] = last_stat')
-    #         log(f'len(stat) = {len(stat)}, delta_t.days = {delta_t.days}')
-    #         stat[-1] = last_stat
-    #     with open('stat.csv', 'w') as file:
-    #         writer = csv.writer(file, delimiter=',', lineterminator='\n')
-    #         if delta_t.days > 0:
-    #             if not len(stat) > 1:
-    #                 '''Если сегодня старта проги не было и кол-во строк в документе не превышает одну:'''
-    #                 log('if delta_t.days > 0 and not len(stat) > 1:')
-    #                 writer.writerow(stat[-1])
-    #                 writer.writerow(last_stat)
-    #                 stat.append(last_stat)
-    #             else:
-    #                 '''Если сегодня старта проги не было и кол-во строк в документе превышает одну:'''
-    #                 log('elif delta_t.days > 0 and len(stat) > 1:')
-    #                 writer.writerows(stat[:-1])
-    #                 log(f'writer.writerows({stat[:-2]})')
-    #                 writer.writerow(last_stat)
-    #                 stat[-1] = last_stat
-    #         else:
-    #             if not len(stat) > 1:
-    #                 '''Если сегодня старт проги был и кол-во строк в документе не превышает одну:'''
-    #                 log('elif not (delta_t.days > 0) and not len(stat) > 1:')
-    #                 writer.writerow(stat[-1])
-    #                 stat[-1] = last_stat
-    #             else:
-    #                 '''Если сегодня старт проги был и кол-во строк в документе превышает одну:'''
-    #                 log('elif not (delta_t.days > 0) and len(stat) > 1:')
-    #                 writer.writerows(stat[:-1])
-    #                 writer.writerow(last_stat)
-    #                 stat[-1] = last_stat
-    #     file.close()
-    #     log(f'stat: {stat}')
-    #     sett_upd()
-    #     log(f'sett saved: {sett}')
-    #     log('datasave.end')
-
 
 def startwin():
     global thisapp, wintitle
-    # def adds():
-    #     time.sleep(1)
-    #     add_to_stat()
-    #     statsave()
-    #     # print(stat)
-    #     threading.Thread(target=adds).start()
-    #
-    # readstat()
-    # print(f'readstated: {stat}')
-    # threading.Thread(target=adds).start()
     with SharedMemoryManager() as smm:
         shared = smm.ShareableList(['a' * 200, 'a' * 200])
         p = Process(target=thiswin, args=(shared,), daemon=True)   # , name='anyyyyyyyy', daemon=True
         p.start()
         # freeze_support()
         while True:
-            if shared != smm.ShareableList(['a' * 200, 'a' * 200]) and \
-                    shared[0] != 'a' * 200 and shared[1] != 'a' * 200:
-                try:
-                    thisapp = shared[0]
-                    wintitle = shared[1]
-                except ValueError:
-                    pass
+            try:
+                if shared != smm.ShareableList(['a' * 2000]) and shared[0] != 'a' * 2000:
+                    try:
+                        thisapp = shared[0]
+                        # wintitle = shared[1]
+                    except ValueError:
+                        pass
+            except ValueError:
+                print('value Err from thread in startwin')
             sleep(0.5)
 
 
 def thiswin(shared):
-    from activewindow import getInfo, getTitle
+    from activewindow import getAppName  # , getTitle
     global thisapp, wintitle
     while True:
-        thisapp = getInfo()['App2']
-        wintitle = getTitle()
+        thisapp = getAppName()['App2']
+        # wintitle = getTitle()
         shared[0] = thisapp
-        shared[1] = wintitle
-    # threading.Timer(1, thiswin).start()
-    # info = a.getInfo()
-    # thisapp = info['App2']
-    # wintitle = info['Title']
-    # # print(thisapp, wintitle)
-    # threading.Timer(1, thiswin).start()
-
-    # lst = SharedMemoryManager().ShareableList([thisapp, wintitle])
-    # lst[0] = thisapp
-    # lst[1] = wintitle
-    # # queue.put({'thisapp': thisapp, 'wintitle': wintitle})
-    # # conn.send({'thisapp': thisapp, 'wintitle': wintitle})
-    # # Process(target=thiswin, args=(conn,)).start()
-    # # return {'thisapp': thisapp, 'wintitle': wintitle}
-    # # thiswin()
+        # shared[1] = wintitle
 
 
 def pre_start():
     global today, delta_t, start, eye_save_time_end
     log('pre_start')
     print(f'до конца отдыха от мон: {(eye_save_time_end - datetime.datetime.now()).total_seconds()}')
-    print(f'{eye_save_time = }\n'
-          f'{str(eye_save_time_end) = }\n'
-          f'{one_sess = }\n'
+    print(f'{sett["eye_save_time"] = }\n'
+          f'{str(sett["eye_save_time_end"]) = }\n'
+          f'{sett["one_sess"] = }\n'
           f'{blocked = }')
-    if eye_save_time * 60 > (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0 and eye_save_enabled:
+    if eye_save_time * 60 > (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0 \
+            and eye_save_enabled:
         print('prestart-eyesavesssssssssssssssssssssssssssssssssssssss')
         eye_save()
-    elif eye_save_enabled and eye_save_time * 60 < (eye_save_time_end - datetime.datetime.now()).total_seconds():
+    elif eye_save_enabled and \
+            eye_save_time * 60 < (eye_save_time_end - datetime.datetime.now()).total_seconds():
         print('prestart_seeeeeeeecondif')
-        eye_save_time_end = datetime.datetime.now().replace(microsecond=0) + datetime.timedelta(minutes=eye_save_time)
-    print(f'eye_save_time_end after upd: {eye_save_time_end}\n'
+        eye_save_time_end = datetime.datetime.now().replace(microsecond=0) \
+            + datetime.timedelta(minutes=eye_save_time)
+    print(f'eye_save_time_end after upd: {sett["eye_save_time_end"]}\n'
           f'{blocked = }')
     if limited and sid >= limit * 60:
         limit_out()
 
     Thread(target=startwin, daemon=True).start()
 
-    today = datetime.date.today()
-    delta_t = today - start
-    if delta_t.days > 0:
-        log(f'if delta_t.days ({delta_t.days}) > 0: ')
-        for i in dirs:
-            print(f'from dirs {i = }')
-            if i == str(datetime.date.today()):
-                dirs.remove(i)
-                print(f'from dirs deleted {i}')
-        past_sid = 0
-        past_day = max(dirs)
-        print(f'{past_day = }')
-        for key in full_stat[past_day]:
-            past_sid += full_stat[past_day][key]
-            print(f'added: {full_stat[past_day][key]}')
-        if past_sid < too_little_time:
-            Process(target=msg.showinfo, args=("Информация",
-                                               "В прошлый раз вы подозрительно мало "
-                                               "сидели за компьютером")).start()
-        else:
-            Process(target=msg.showinfo, args=("Информация",
-                                               f"Время проведённое за компьютером в прошлый раз: "
-                                               f"{datetime.timedelta(seconds=past_sid)}")).start()
-        datasave()
-        start = datetime.date.today()
-        delta_t = today - start
-    make_shortcut('Sledilka', path.abspath('Sledilka.exe'), 'startup')
+    add_to_startup()
 
 
 def limit_out():
@@ -1079,20 +1071,12 @@ def limit_out():
     global eye_save_time, eye_save_time_end, lim_activated
     print(eye_save_time_end, eye_save_time)
 
-    def hiber():
-        popen('shutdown -h')
-
-    def block_s():
-        print('block_s')
-        window.show_block()
-
     def locker():
         global lim_activated
         log('locker')
         if lim_activated and limited and sid > limit:
-            user = windll.LoadLibrary('user32.dll')
-            user.LockWorkStation()
-            QTimer.singleShot(2000, locker)
+            lock_comp()
+            QTimer.singleShot(1000, locker)
         else:
             print('locker lim_activated - false')
             lim_activated = False
@@ -1100,14 +1084,14 @@ def limit_out():
     lim_activated = True
     if lim_off_type == 0:
         log('sutdown')
-        popen('shutdown -t 10 -s -c "Требуется отдых от монитора"')
+        popen(f'shutdown -t 100 -s -c "{phrases["needs monitor rest"]}"')
     elif lim_off_type == 1:
         log('hiber')
         QTimer.singleShot(5000, hiber)
-        msg.showinfo(phrases['hiber'], 'Требуется отдых от монитора')
+        notif(['hiber'], phrases["needs monitor rest"])
     elif lim_off_type == 2:
         log('restart')
-        popen('shutdown -t 10 -r -c "Требуется отдых от монитора"')
+        popen(f'shutdown -t 10 -r -c "{phrases["needs monitor rest"]}"')
     elif lim_off_type == 3:
         log('block')
         QTimer.singleShot(1, block_s)
@@ -1122,21 +1106,13 @@ def eye_save():
     global eye_save_time, eye_save_time_end, blocked
     log('eye_save')
     print(blocked)
-    print(eye_save_time_end, eye_save_time)
-
-    def hiber():
-        popen('shutdown -h')
-
-    def block_s():
-        print('block_s')
-        window.show_block()
+    print(eye_save_time_end, eye_save_time, eye_save_type)
 
     def locker():
         global blocked
         log('locker')
         if blocked and (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0:
-            user = windll.LoadLibrary('user32.dll')
-            user.LockWorkStation()
+            lock_comp()
             QTimer.singleShot(100, locker)
         else:
             print('locker blocked - false')
@@ -1145,14 +1121,14 @@ def eye_save():
     blocked = True
     if eye_save_type == 0:
         log('sutdown')
-        popen('shutdown -t 10 -s -c "Требуется отдых от монитора"')
+        popen(f'shutdown -t 10 -s -c {phrases["needs monitor rest"]}')
     elif eye_save_type == 1:
         log('hiber')
         QTimer.singleShot(5000, hiber)
-        msg.showinfo(phrases['hiber'], 'Требуется отдых от монитора')
+        notif(phrases['hiber'], phrases["needs monitor rest"])
     elif eye_save_type == 2:
         log('restart')
-        popen('shutdown -t 10 -r -c "Требуется отдых от монитора"')
+        popen(f'shutdown -t 10 -r -c {phrases["needs monitor rest"]}')
     elif eye_save_type == 3:
         log('block')
         QTimer.singleShot(1, block_s)
@@ -1161,6 +1137,26 @@ def eye_save():
         locker()
     else:
         blocked = False
+
+
+def hiber():
+    if platform == 'win32':
+        print(popen('shutdown -h').read())
+    elif platform == 'linux':
+        pass
+
+
+def block_s():
+    print('block_s')
+    window.show_block()
+
+
+def lock_comp():
+    if platform == 'win32':
+        user = windll.LoadLibrary('user32.dll')
+        user.LockWorkStation()
+    elif platform == 'linux':
+        popen('loginctl lock-session')
 
 
 def log(text):
@@ -1182,11 +1178,45 @@ def to_bool(_str):
         return False
 
 
+def notif(title, msg, sec=2):
+    window.tray_icon.showMessage(str(title), str(msg), app_icon, sec*1000)
+
+
+def notifications():
+    global today, delta_t, start
+    today = datetime.date.today()
+    delta_t = today - start
+    if delta_t.days > 0:
+        log(f'if delta_t.days ({delta_t.days}) > 0: ')
+        for i in dirs:
+            # print(f'from dirs {i = }')
+            if i == str(datetime.date.today()):
+                dirs.remove(i)
+                # print(f'from dirs deleted {i}')
+        past_sid = 0
+        past_day = max(dirs)
+        print(f'{past_day = }')
+        for key in full_stat[past_day]:
+            past_sid += full_stat[past_day][key]
+            print(f'added: {full_stat[past_day][key]}')
+        print(f'{past_sid = }\n{too_little_time = }')
+        if past_sid < too_little_time:
+            print('too low')
+            notif("Информация", "В прошлый раз вы подозрительно мало сидели за компьютером", 3)
+        else:
+            notif("Информация", f"Время проведённое за компьютером в прошлый раз: "
+                                f"{datetime.timedelta(seconds=past_sid)}", 3)
+        datasave()
+        start = datetime.date.today()
+        delta_t = today - start
+
+
 if __name__ == '__main__':
-    # freeze_support()
     dataload()
-    pre_start()
     app = QApplication(argv)
-    app.setWindowIcon(QIcon('icon.ico'))
+    app_icon = QIcon('icon.ico')
+    app.setWindowIcon(app_icon)
     window = Timer()
+    pre_start()
+    notifications()
     app.exec()
