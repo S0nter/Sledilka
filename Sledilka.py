@@ -1136,13 +1136,13 @@ def daysave(day):
 def startwin():
     global thisapp, wintitle
     with SharedMemoryManager() as smm:
-        shared = smm.ShareableList(['a' * 200, 'a' * 200])
+        shared = smm.ShareableList(['a' * 70])
         p = Process(target=thiswin, args=(shared,), daemon=True)   # , name='anyyyyyyyy', daemon=True
         p.start()
         # freeze_support()
         while True:
             try:
-                if shared != smm.ShareableList(['a' * 2000]) and shared[0] != 'a' * 2000:
+                if shared != smm.ShareableList(['a' * 70]) and shared[0] != 'a' * 70:
                     try:
                         thisapp = shared[0]
                         # wintitle = shared[1]
@@ -1158,6 +1158,8 @@ def thiswin(shared):
     global thisapp, wintitle
     while True:
         thisapp = getAppName()['App2']
+        if len(thisapp) > 50:
+            thisapp = thisapp[0:49]
         # wintitle = getTitle()
         shared[0] = thisapp
         # shared[1] = wintitle
@@ -1303,13 +1305,6 @@ def to_bool(_str):
         return True
     else:
         return False
-
-
-def get_key(dict_, value):
-    for key, val in dict_.items():
-        if val == value:
-            return key
-    return 1
 
 
 def notif(title, msg, sec=2):
