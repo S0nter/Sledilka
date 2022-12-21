@@ -8,4 +8,6 @@ Sledilka is a program that controls the time, runs behind the computer, and turn
 
 ## How to compile?
 Run this command:
-```<Python binary> -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt6 --disable-console Sledilka.py```
+```
+<Python binary> -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt6 --disable-console Sledilka.py
+```
