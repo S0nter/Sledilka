@@ -1,7 +1,6 @@
 import csv
 import datetime
 import json
-from multiprocessing import Process
 from multiprocessing.managers import SharedMemoryManager
 from os import listdir, chdir, mkdir, path, popen, getcwd
 from sys import argv, platform as pt
@@ -11,14 +10,14 @@ from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
 from PyQt6.QtGui import QPainter, QIcon, QFont, QColor, QAction
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
     QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
-    QDialog, QLineEdit, QMessageBox  # QAction,
+    QDialog, QLineEdit, QScrollArea  # , QMessageBox  # QAction,
 from darkdetect import theme as th
 
 platform = pt
 if platform == 'win32':
     from ctypes import windll
-    import winshell
-    from win32com.client import Dispatch
+    import winshell  # noqa
+    from win32com.client import Dispatch  # noqa
 
 limited = False
 limit = 0  # Возможное колличество времени за день (мин)
@@ -29,7 +28,7 @@ sid_sess = 0  # Время текущей сессии (сек)
 stat = {}  # Сегодняшняя статистика
 full_stat = {str(datetime.date.today()): {}}  # Статистика вся, кроме сегодня
 stat_sids = {str(datetime.date.today()): 0}
-warn_before = 3  # Показ уведомления, когда остаётся warn_before минут до чего-либо
+warn_before = 0  # Показ уведомления, когда остаётся warn_before минут до чего-либо (0 - отключено)
 
 pros = []  # Время по дням, сколько было просижено в каждый день
 vozm = []  # Сколько можно было вообще просидеть
@@ -40,8 +39,6 @@ eye_save_type = 0  # Тип выключения компа
 eye_save_time = 1  # Длительность отдыха от монитора (минут)
 eye_save_time_end = datetime.datetime.now().replace(microsecond=0)  # Конец отдыха от монитора
 eye_save_enabled = False
-# eye_save_time_end = datetime.datetime.strptime(
-#     datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')
 blocked = False
 start = datetime.date.today()
 today = datetime.date.today()
@@ -55,14 +52,17 @@ sett = {'one_sess': 0,
         'limit': 0,
         'lim_off_type': 0,
         'theme': 'Light',
-        'warn_before': 0}
+        'warn_before': 0,
+        # 'in_tray': False
+        'tran_name': 'Русский'
+        }
 thisapp = 'Sledilka.exe'
 wintitle = ''
 saved = False
 dirs = []
 too_little_time = 1
 phrases = {
-    'stat title': 'Статистика',
+    'translation name': 'Русский',
     'shutdown': 'Выключить компьютер',
     'restart': 'Перезагрузка',
     'hiber': 'Гибернация',
@@ -70,18 +70,44 @@ phrases = {
     'lock scr': 'Экран блокировки',
     'block title': 'Следилка - Блокировщик ТЕБЯ',
     'add time': 'Добавить',
+    'minutes': ' мин.',
     'needs monitor rest': 'Требуется отдых от монитора',
+    'need monitor rest for': 'Требовать отдыха от монитора на',
+    'monitor rest': 'Отдых от монитора',
+    'limit': 'Лимит времени',
+    'your time is over': 'Ваше время истекло 👎',
+    'limit will be over soon': 'Лимит времени скоро закончится',
+    'session will be over soon': 'Сессия скоро закончится',
+    'duration of session': 'Длительность сеанса',
+    'by the end of the session:': 'При окончании сеанса:',
     'time adder title': 'Добавить время',
+    'suspiciously little time': 'В прошлый раз вы подозрительно мало сидели за компьютером',
+    'previous time:': 'Время проведённое за компьютером в прошлый раз: ',
     'application': 'Приложение',
+    'preliminary notifications': 'Предварительные оповещения',
+    'show notifications before': 'Показывать уведомления за ',
+    'info': 'Информация',
+    'translations': 'Переводы',
+    'translation': 'Перевод',
+    'copy': 'Копировать',
+    'statistic': 'Статистика',
+    'settings': 'Настройки',
+    'show': 'Показать',
+    'hide': 'Скрыть',
     'ok': 'OK',
     'cancel': 'Отмена',
     'apply': 'Применить',
+    'total:': 'Всего:',
+    'after': 'по прошествии',
     'whats datas?': 'На какую дату добавить?',
     'today': 'Сегодня',
     'app name': 'Следилка',
+    'theme': 'Тема оформления',
     'dark': 'Тёмная',
     'light': 'Светлая'
 }
+trans = ['Русский']
+tran_name = 'Русский'
 theme = th()
 
 
@@ -93,7 +119,7 @@ class Timer(QWidget):
         self.setFixedSize(QSize(145, 110))
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.setWindowTitle(phrases['app name'])
-        self.setWindowIcon(QIcon('icon.ico'))
+        self.setWindowIcon(app_icon)
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.offset = None
@@ -112,13 +138,11 @@ class Timer(QWidget):
 
         self._actions()
 
+        self._tray()
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.time_show)
-
-        self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon('icon.ico'))
-        self.tray_icon.activated.connect(self.restore_window)
 
         self.context = QMenu(self)
         self.context.addAction(self.copy)
@@ -129,23 +153,13 @@ class Timer(QWidget):
         self.context.addSeparator()
         self.context.addAction(self.a_hide)
 
-        self.tray_menu = QMenu()
-
-        self.tray_menu.addAction(self.a_sett)
-        self.tray_menu.addAction(self.a_stat)
-        self.tray_menu.addSeparator()
-        self.tray_menu.addAction(self.a_show)
-        self.tray_menu.addAction(self.a_hide)
-        self.tray_icon.setContextMenu(self.tray_menu)
-        self.tray_icon.show()
-
         # threading.Timer(10, self.runtimesec).start()
 
         self.timer = QTimer()
-        self.timer.timeout.connect(self.runtimesec)
+        self.timer.timeout.connect(self.runtimesec)  # noqa
         self.timer.setInterval(1000)
         self.checker_timer = QTimer()
-        self.checker_timer.timeout.connect(self.checker)
+        self.checker_timer.timeout.connect(self.checker)  # noqa
         self.checker_timer.setInterval(1000)
 
         if not lim_activated and not blocked:
@@ -155,21 +169,37 @@ class Timer(QWidget):
         self.it = 0  # Итерации
         self.runtime()
 
+    # noinspection PyUnresolvedReferences
     def _actions(self):
-        self.copy = QAction('Копировать', self)
-        self.copy.triggered.connect(self.sid_add)
+        self.copy = QAction(phrases['copy'], self)
+        self.copy.triggered.connect(self.sid_add)  # noqa
 
-        self.a_stat = QAction('Статистика', self)
-        self.a_stat.triggered.connect(self.stat.show)
+        self.a_stat = QAction(phrases['statistic'], self)
+        self.a_stat.triggered.connect(self.stat.show)  # noqa
 
-        self.a_sett = QAction('Настройки', self)
+        self.a_sett = QAction(phrases['settings'], self)
         self.a_sett.triggered.connect(self.sett_w.show)
 
-        self.a_show = QAction('Показать', self)
-        self.a_show.triggered.connect(self.show)
+        self.a_show = QAction(phrases['show'], self)
+        self.a_show.triggered.connect(self.show)  # noqa
 
-        self.a_hide = QAction('Скрыть', self)
-        self.a_hide.triggered.connect(self.hide)
+        self.a_hide = QAction(phrases['hide'], self)
+        self.a_hide.triggered.connect(self.hide)  # noqa
+
+    def _tray(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(app_icon)
+        self.tray_icon.activated.connect(self.restore_window)  # noqa
+
+        self.tray_menu = QMenu()
+        self.tray_menu.addAction(self.a_sett)
+        self.tray_menu.addAction(self.a_stat)
+        self.tray_menu.addSeparator()
+        self.tray_menu.addAction(self.a_show)
+        self.tray_menu.addAction(self.a_hide)
+
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.show()
 
     @staticmethod
     def sid_add():
@@ -230,9 +260,7 @@ class Timer(QWidget):
 
     def checker(self):
         global sid, sid_sess, eye_save_time_end, start, saved, stat, thisapp, wintitle
-        # thisapp = win_info[0]
-        # wintitle = win_info[1]
-        s = datetime.datetime.now()
+        s = datetime.datetime.now()  # noqa
         if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
             saved = False
             if self.isHidden() and not self.in_tray:
@@ -277,10 +305,10 @@ class Timer(QWidget):
         else:
             self.time_show.setStyleSheet("QLabel { color : white; }")
         if sid_sess + warn_before * 60 == one_sess * 60:  # сек + мин * 60 == мин * 60
-            notif('Отдых от монитора', 'Сессия скоро закончится')
+            notif(phrases['monitor rest'], phrases['session will be over soon'])
             print('NOOOOOOOOOOOOOOTIFED')
         elif limited and limit * 60 == sid + warn_before * 60:  # мин * 60 == сек + мин * 60
-            notif('Лимит времени', 'Лимит времени скоро закончится')
+            notif(phrases['limit'], phrases['limit will be over soon'])
             print('NOOOOOOOOOOOOOOTIFED')
         # print((datetime.datetime.now() - s).total_seconds(), 'cекунд итерация checker')
 
@@ -304,24 +332,28 @@ class Timer(QWidget):
 class Settings(QWidget):
     def __init__(self):
         super().__init__()
-        self.s_eye_rest_label = QLabel('Требовать отдыха от монитора на')
+        self.s_eye_rest_label = QLabel(phrases['need monitor rest for'])
         log('Settings __init__')
-        self.setWindowTitle("Настройки")
+        self.setWindowTitle(phrases['settings'])
         self.setWindowIcon(app_icon)
         self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
 
+        self.translator = Translator()
+
         self.layout = QVBoxLayout()
-        self.layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        # self.layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        self.mainlay = QVBoxLayout()
 
         self._set_eye_save()
         self._set_limits()
         self._set_warn_before()
         self._set_color()
-
-        self.update_interface()
         self._set_buttons()
 
-        self.setLayout(self.layout)
+        self._set_scroll()
+        self.update_interface()
+        self._set_main_buttons()
+        self.setLayout(self.mainlay)
 
     # def set_s_eye_type(self):
     # if self.s_one_sess_ch.isChecked():
@@ -332,14 +364,16 @@ class Settings(QWidget):
     #     self.s_eye.setEnabled(False)
 
     def _set_eye_save(self):
-        self.s_one_sess_gr = QGroupBox('Отдых от монитора')  # Отдых от монитора:
+        self.s_one_sess_gr = QGroupBox()  # Отдых от монитора:
+        self.s_one_sess_gr.setTitle(phrases['monitor rest'])
         self.s_one_sess_gr.setCheckable(True)
 
-        self.s_eye_sess = QLabel('Длительность сеанса')
+        self.s_eye_sess = QLabel()
+        self.s_eye_sess.setText(phrases['duration of session'])
         self.s_eye = QSpinBox()
         self.s_eye.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.s_eye.setRange(1, 1440)
-        self.s_eye.setSuffix(' мин.')
+        self.s_eye.setSuffix(phrases['minutes'])
 
         self.s_eye_lay = QHBoxLayout()
         self.s_eye_lay.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -347,7 +381,7 @@ class Settings(QWidget):
         self.s_eye_lay.addWidget(self.s_eye)
         self.s_eye_lay.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
 
-        self.s_eye_sess_end_label = QLabel('При окончании сеанса:')
+        self.s_eye_sess_end_label = QLabel(phrases['by the end of the session:'])
 
         self.s_eye_sess_end_list = QComboBox()
         self.s_eye_sess_end_list.addItem(phrases['shutdown'])
@@ -363,7 +397,7 @@ class Settings(QWidget):
         self.s_eye_rest_spin = QSpinBox()
         self.s_eye_rest_spin.setRange(1, 1440)
         self.s_eye_rest_spin.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.s_eye_rest_spin.setSuffix(' мин.')
+        self.s_eye_rest_spin.setSuffix(phrases['minutes'])
 
         self.s_eye_rest_lay = QHBoxLayout()
         self.s_eye_rest_lay.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -378,7 +412,7 @@ class Settings(QWidget):
         self.layout.addWidget(self.s_one_sess_gr)
 
     def _set_limits(self):
-        self.s_lim_gr = QGroupBox('Дневной лимит времени')
+        self.s_lim_gr = QGroupBox(phrases['limit'])
         self.s_lim_gr.setCheckable(True)
 
         self.s_lim_end_list = QComboBox()
@@ -388,12 +422,12 @@ class Settings(QWidget):
         self.s_lim_end_list.addItem(phrases['to lock scr'])
         self.s_lim_end_list.addItem(phrases['lock scr'])
 
-        self.s_lim_lab = QLabel('по прошествии')
+        self.s_lim_lab = QLabel(phrases['after'])
 
         self.s_limit = QSpinBox()
         self.s_limit.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.s_limit.setRange(1, 1440)
-        self.s_limit.setSuffix(' мин.')
+        self.s_limit.setSuffix(phrases['minutes'])
 
         self.s_lim_lay = QHBoxLayout(self.s_lim_gr)
         self.s_lim_lay.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -405,14 +439,14 @@ class Settings(QWidget):
         self.layout.addWidget(self.s_lim_gr)
 
     def _set_warn_before(self):
-        self.s_warn_gr = QGroupBox('Предварительные оповещения')
+        self.s_warn_gr = QGroupBox(phrases['preliminary notifications'])
         self.s_warn_gr.setCheckable(True)
 
         self.s_warn = QSpinBox()
         self.s_warn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.s_warn.setRange(1, 1440)
-        self.s_warn.setSuffix(' мин.')
-        self.s_warn.setPrefix('Показывать уведомления за ')
+        self.s_warn.setSuffix(phrases['minutes'])
+        self.s_warn.setPrefix(phrases['show notifications before'])
 
         self.s_warn_gr_lay = QVBoxLayout(self.s_warn_gr)
         self.s_warn_gr_lay.addWidget(self.s_warn)
@@ -420,45 +454,77 @@ class Settings(QWidget):
         self.layout.addWidget(self.s_warn_gr)
 
     def _set_color(self):
-        self.s_theme_gr = QGroupBox('Тема оформления')
+        self.s_theme_gr = QGroupBox(phrases['theme'])
 
         self.s_theme_list = QComboBox()
         self.s_theme_list.addItem(phrases['dark'])
         self.s_theme_list.addItem(phrases['light'])
 
-        self.s_theme_gr_lay = QHBoxLayout(self.s_theme_gr)
+        self.s_tran_label = QLabel(phrases['translation'])
+        self.s_tran_list = QComboBox()
+
+        self.s_tran_lay = QHBoxLayout()
+        self.s_tran_lay.addWidget(self.s_tran_label)
+        self.s_tran_lay.addWidget(self.s_tran_list)
+
+        self.s_theme_gr_lay = QVBoxLayout(self.s_theme_gr)
         self.s_theme_gr_lay.addWidget(self.s_theme_list)
+        self.s_theme_gr_lay.addLayout(self.s_tran_lay)
 
         self.layout.addWidget(self.s_theme_gr)
 
+    def _set_scroll(self):
+        self.area = QScrollArea()
+        self.area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        widget = QWidget()
+        widget.setLayout(self.layout)
+        widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.area.setWidget(widget)
+        # self.area.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        self.area.setWidgetResizable(True)
+
+        self.mainlay.addWidget(self.area)
+
     def _set_buttons(self):
-        self.butt_lay = QHBoxLayout()
-        self.butt_lay.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.btnlay = QHBoxLayout()     # Перевод
+        self.s_tran_bt = QPushButton()
+        self.s_tran_bt.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.s_tran_bt.setText(phrases['translations'])
+        self.s_tran_bt.clicked.connect(self.translator.show)  # noqa
+
+        self.btnlay.addWidget(self.s_tran_bt)
+
+        self.layout.addLayout(self.btnlay)
+
+    def _set_main_buttons(self):
+        self.main_btn_lay = QHBoxLayout()
+        self.main_btn_lay.setAlignment(Qt.AlignmentFlag.AlignRight)
 
         self.butt_ok = QPushButton()
         self.butt_ok.setText(phrases['ok'])
-        self.butt_ok.clicked.connect(self.sett_save)
-        self.butt_ok.clicked.connect(self.close)
+        self.butt_ok.clicked.connect(self.sett_save)  # noqa
+        self.butt_ok.clicked.connect(self.close)  # noqa
         self.butt_ok.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.butt_lay.addWidget(self.butt_ok)
+        self.main_btn_lay.addWidget(self.butt_ok)
 
         self.butt_cancel = QPushButton()
         self.butt_cancel.setText(phrases['cancel'])
-        self.butt_cancel.clicked.connect(self.close)
+        self.butt_cancel.clicked.connect(self.close)  # noqa
         self.butt_cancel.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.butt_lay.addWidget(self.butt_cancel)
+        self.main_btn_lay.addWidget(self.butt_cancel)
 
         self.butt_apply = QPushButton()
         self.butt_apply.setText(phrases['apply'])
-        self.butt_apply.clicked.connect(self.sett_save)
+        self.butt_apply.clicked.connect(self.sett_save)  # noqa
         self.butt_apply.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.butt_lay.addWidget(self.butt_apply)
+        self.main_btn_lay.addWidget(self.butt_apply)
 
-        self.layout.addLayout(self.butt_lay)
+        self.mainlay.addLayout(self.main_btn_lay)
 
     def sett_save(self):
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, eye_save_enabled, limited, lim_off_type, \
-            limit, theme, warn_before
+            limit, theme, warn_before, tran_name, window, sid, phrases
         one_sess = self.s_eye.value()
         eye_save_enabled = self.s_one_sess_gr.isChecked()  # Длительность сеанса
         # eye_save_time_end = datetime.datetime.now().replace(microsecond=0) + \
@@ -499,7 +565,17 @@ class Settings(QWidget):
             warn_before = self.s_warn.value()
         else:
             warn_before = 0
+        changed = False  # Был ли текущий перевод изменён
+        if tran_name != self.s_tran_list.currentText():
+            tran_name = self.s_tran_list.currentText()
+            gettran(tran_name)
+            changed = True
+
         datasave()
+
+        if changed:
+            sid += 2
+            window = Timer()
 
     def update_interface(self):
         self.s_one_sess_gr.setChecked(eye_save_enabled)
@@ -533,6 +609,11 @@ class Settings(QWidget):
             self.s_theme_list.setCurrentText(phrases['dark'])
         else:
             self.s_theme_list.setCurrentText(phrases['light'])
+        while self.s_tran_list.count() > 0:
+            self.s_tran_list.removeItem(0)
+        for t in trans:
+            self.s_tran_list.addItem(t)
+        self.s_tran_list.setCurrentText(tran_name)
 
         if warn_before > 0:
             self.s_warn_gr.setChecked(True)
@@ -547,6 +628,7 @@ class Settings(QWidget):
     def closeEvent(self, event):  # Если удалить - при закрытии будет завершаться приложение
         event.ignore()
         self.hide()
+        print(self.width(), self.height())
 
 
 class Block(QWidget):
@@ -556,7 +638,7 @@ class Block(QWidget):
         self.setWindowFlags(Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet("background: black;")
         self.setWindowTitle(phrases['block title'])
-        self.setWindowIcon(QIcon('icon.ico'))
+        self.setWindowIcon(app_icon)
         self.setWindowOpacity(0.8)
         if (blocked or lim_activated) and (eye_save_type == 3 or lim_off_type == 3):
             self.showFullScreen()
@@ -567,16 +649,17 @@ class Block(QWidget):
         self.label = QLabel()
         self.label.setStyleSheet("color: red;")
         if not lim_activated:
-            self.label.setText("Отдых от монитора")
+            self.label.setText(phrases['monitor rest'])
         else:
-            self.label.setText('Ваше время истекло 👎')
+            self.label.setText(phrases['your time is over'])
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setFont(QFont("Arial", 40))
         layout.addWidget(self.label)
         self.b_timer = QLabel()
         self.b_timer.setStyleSheet("color: blue;")
         if not lim_activated:
-            self.b_timer.setText(f'До конца Х минут')
+            self.b_timer.setText(self.b_timer.setText(str(
+                datetime.timedelta(seconds=int((eye_save_time_end - datetime.datetime.now()).total_seconds())))))
         else:
             self.b_timer.setText('')
         self.b_timer.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -585,7 +668,7 @@ class Block(QWidget):
         self.noclo()
 
         self.blocksec_timer = QTimer()
-        self.blocksec_timer.timeout.connect(self.blocksec)
+        self.blocksec_timer.timeout.connect(self.blocksec)  # noqa
         self.blocksec_timer.start(1000)
 
     def noclo(self):
@@ -625,7 +708,7 @@ class Block(QWidget):
             self.b_timer.setText(str(
                 datetime.timedelta(seconds=int((eye_save_time_end - datetime.datetime.now()).total_seconds()))))
         else:
-            self.label.setText('Ваше время истекло 👎')
+            self.label.setText(phrases['your time is over'])
             self.b_timer.setText('')
         # self.b_timer.update()
         if (eye_save_time_end - datetime.datetime.now()).total_seconds() < 1 or \
@@ -641,11 +724,11 @@ class Statistic(QWidget):
     def __init__(self):
         super().__init__()
         log('Statistic __init__')
-        self.setWindowTitle(phrases['stat title'])
-        self.setWindowIcon(QIcon('icon.ico'))
+        self.setWindowTitle(phrases['statistic'])
+        self.setWindowIcon(app_icon)
         self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
 
-        self.adder = TimeAdder(self)
+        self.adder = TimeAdder()
 
         self.mainlay = QHBoxLayout()
         self.layout = QVBoxLayout()
@@ -660,15 +743,14 @@ class Statistic(QWidget):
 
         self.add_time = QPushButton()
         self.add_time.setText(phrases['add time'])
-        self.add_time.clicked.connect(self.adder.show)
-
+        self.add_time.clicked.connect(self.adder.show)  # noqa
         self.layout.addWidget(self.stat_l)
         self.layout.addWidget(self.add_time)
         self.mainlay.addLayout(self.layout)
         self.setLayout(self.mainlay)
         self.stat_make()
         self.updater = QTimer()
-        self.updater.timeout.connect(self.stat_upd)
+        self.updater.timeout.connect(self.stat_upd)  # noqa
         self.updater.setInterval(1000)
 
     def stat_make(self):
@@ -698,17 +780,17 @@ class Statistic(QWidget):
                              f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=d[key])}\n')
                 summ += d[key]
         if text.text().replace(' ', '') != '':
-            text.setText(text.text() + f'\nВсего: {datetime.timedelta(seconds=summ)}')
+            text.setText(text.text() + f"\n{phrases['total:']} {datetime.timedelta(seconds=summ)}")
             self.tabs.addTab(text, name)
 
     def stat_upd(self):
         try:
-            self.stat_l.setText('Сегодня:\n')
+            self.stat_l.setText(f"{phrases['today']}:\n")
             for key in sort(stat):
                 if stat[key] != 0 and key not in ['LockApp.exe', 'LockScr']:
                     self.stat_l.setText(self.stat_l.text() +
                                         f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=stat[key])}\n')
-            self.stat_l.setText(self.stat_l.text() + f'\nВсего: {datetime.timedelta(seconds=sid)}')
+            self.stat_l.setText(self.stat_l.text() + f"\n{phrases['total:']} {datetime.timedelta(seconds=sid)}")
         except Exception as exc:
             print('failed to update stat:', exc)
 
@@ -718,8 +800,8 @@ class Statistic(QWidget):
 
 
 class TimeAdder(QDialog):
-    def __init__(self, parent):
-        super(TimeAdder, self).__init__(parent)
+    def __init__(self):
+        super().__init__()
         log('TimeAdder __init__')
 
         self.setWindowTitle(phrases['time adder title'])
@@ -730,7 +812,7 @@ class TimeAdder(QDialog):
 
         self.time = QSpinBox()
         self.time.setRange(1, 1440)
-        self.time.setSuffix(' мин.')
+        self.time.setSuffix(phrases['minutes'])
 
         self.dates = QComboBox()
         self.dates.setWhatsThis(phrases['whats datas?'])
@@ -747,9 +829,9 @@ class TimeAdder(QDialog):
 
         buttons = QHBoxLayout()
         self.ok_b = QPushButton(phrases['ok'])
-        self.ok_b.clicked.connect(self.ok)
+        self.ok_b.clicked.connect(self.ok)  # noqa
         self.cancel_b = QPushButton(phrases['cancel'])
-        self.cancel_b.clicked.connect(self.reject)
+        self.cancel_b.clicked.connect(self.reject)  # noqa
         buttons.addWidget(self.ok_b)
         buttons.addWidget(self.cancel_b)
 
@@ -785,6 +867,62 @@ class TimeAdder(QDialog):
             self.accept()
 
 
+class Translator(QWidget):
+    def __init__(self):
+        super().__init__()
+        log('Translator __init__')
+        self.setWindowTitle(phrases['translations'])
+        self.setWindowIcon(app_icon)
+        self.setWindowFlags(Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowCloseButtonHint)
+
+        self.mainlay = QVBoxLayout()
+        self.layout = QVBoxLayout()
+
+        self.lines = []
+
+        for key in phrases.keys():
+            widget = QLineEdit()
+            widget.setPlaceholderText(key)
+            widget.setText(phrases[key])
+            self.layout.addWidget(widget)
+            self.lines.append(widget)
+
+        self.apply_b = QPushButton()
+        self.apply_b.setText(phrases['apply'])
+        self.apply_b.clicked.connect(self.apply)  # noqa
+
+        widget = QWidget()
+        widget.setLayout(self.layout)
+        self.area = QScrollArea()
+        # self.area.setLayout(self.layout)
+        self.area.setWidget(widget)
+        self.area.setWidgetResizable(True)
+
+        self.mainlay.addWidget(self.area)
+        self.mainlay.addWidget(self.apply_b)
+
+        self.setLayout(self.mainlay)
+
+    def closeEvent(self, event):  # Если удалить - при закрытии будет завершаться приложение
+        event.ignore()
+        self.hide()
+
+    def apply(self):
+        global window, sid, tran_name
+        # self.save()
+        for w in self.lines:
+            print(w.placeholderText(), w.text())
+            if w.text() != '':
+                phrases[w.placeholderText()] = w.text()
+            else:
+                phrases[w.placeholderText()] = w.placeholderText()
+        tran_name = phrases['translation name']
+        sid += 2
+        transave()
+        datasave()
+        window = Timer()
+
+
 def sort(dict_):
     sorted_dict = {}
     # sorted_keys = list(sorted(dict, key=dict.get))[::-1]
@@ -814,7 +952,8 @@ def sett_upd():
             'limit': limit,
             'lim_off_type': lim_off_type,
             'theme': theme,
-            'warn_before': warn_before}
+            'warn_before': warn_before,
+            'tran_name': tran_name}
 
 
 def dataload():
@@ -824,7 +963,7 @@ def dataload():
 
     def readsett():
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett, sid, eye_save_enabled, limited, limit, \
-            lim_off_type, theme, warn_before
+            lim_off_type, theme, warn_before, tran_name
         # sid = 0
         try:
             with open('sett.slset', 'r') as file:  # Настройки
@@ -839,9 +978,10 @@ def dataload():
                 lim_off_type = sett['lim_off_type']
                 theme = sett['theme']
                 warn_before = sett['warn_before']
+                tran_name = sett['tran_name']
                 print('sett:', sett)
         except Exception as exc:
-            print('Failed to read settings because', exc, ' trying to read as old settings')
+            print('Failed to read settings because', exc, ' trying to read as old settings', getcwd())
             with open('sett.slset', 'r') as file:
                 sett_l = list(csv.reader(file, delimiter=','))[0]
                 one_sess = int(sett_l[0])
@@ -888,11 +1028,10 @@ def dataload():
                     full_stat[d]['Sledilka.exe'] = 0
                     chdir('..')
         chdir('..')
-        # for i in range(len(dirs)):
-        #     dirs[i] =
     log('sett')
     try:
         readsett()
+        gettran(tran_name)  # noqa
     except FileNotFoundError:
         log('except FileNotFoundError:')
         make_file('sett')
@@ -904,6 +1043,7 @@ def dataload():
         make_file('sett')
     finally:
         readsett()
+        gettran(tran_name)
     log('stat')
     try:
         readstat()
@@ -972,6 +1112,27 @@ def readstat():
         chdir('..')
 
 
+def gettran(name):
+    global phrases, trans
+    try:
+        chdir('Translations')
+    except FileNotFoundError:
+        mkdir('Translations')
+        chdir('Translations')
+    print(listdir(), 'llllllllllll')
+    trans = [t.split('.')[0] for t in listdir()]
+    print(f'{trans = }')
+    try:
+        with open(f'{name}.sltr', 'r') as file:
+            phrases1 = dict(json.load(file))
+            for k in phrases1.keys():
+                phrases[k] = phrases1[k]
+    except Exception as exc:
+        print('cannot get translation:', exc)
+    finally:
+        chdir('..')
+
+
 def set_all_sids():
     global num_days
     log('set_all_sids')
@@ -1024,7 +1185,7 @@ def make_shortcut(name, target, path_to_save, w_dir='default', icon='default'):
     elif path_to_save == 'startup':
         '''Adding to startup (windows)'''
         user = path.expanduser('~')
-        path_to_save = path.join(r"%s/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/" % user,
+        path_to_save = path.join(fr"{user}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup/",
                                  str(name) + '.lnk')
     else:
         path_to_save = path.join(path_to_save, str(name) + '.lnk')
@@ -1085,31 +1246,9 @@ def datasave():
     with open('sett.slset', 'w') as file:  # Настройки
         print('opened')
         json.dump(sett, file, ensure_ascii=False)
-        # writer = csv.writer(file, delimiter=',', lineterminator='\n')
-        # writer.writerow(sett)
     print('sett2')
     statsave()
-
-
-def statsave():
-    try:
-        chdir('Statistic')
-    except FileNotFoundError:
-        mkdir('Statistic')
-        chdir('Statistic')
-    try:
-        # значит не начался новый день
-        chdir(str(datetime.date.today()))
-    except FileNotFoundError:
-        # значит начался новый день
-        mkdir(str(datetime.date.today()))
-        chdir(str(datetime.date.today()))
-    with open('stat.csv', 'w') as file:
-        writer = csv.writer(file, delimiter=':', lineterminator='\n')
-        for key in stat.keys():
-            writer.writerow([key, stat[key]])
-    for _ in range(2):
-        chdir('..')
+    # transave()
 
 
 def daysave(day):
@@ -1133,35 +1272,82 @@ def daysave(day):
         chdir('..')
 
 
+def transave():
+    try:
+        chdir('Translations')
+    except FileNotFoundError:
+        mkdir('Translations')
+        chdir('Translations')
+    with open(f'{tran_name}.sltr', 'w') as file:
+        json.dump(phrases, file, ensure_ascii=False)
+        chdir('..')
+
+
+def statsave():
+    try:
+        chdir('Statistic')
+    except FileNotFoundError:
+        mkdir('Statistic')
+        chdir('Statistic')
+    try:
+        # значит не начался новый день
+        chdir(str(datetime.date.today()))
+    except FileNotFoundError:
+        # значит начался новый день
+        mkdir(str(datetime.date.today()))
+        chdir(str(datetime.date.today()))
+    with open('stat.csv', 'w') as file:
+        writer = csv.writer(file, delimiter=':', lineterminator='\n')
+        for key in stat.keys():
+            writer.writerow([key, stat[key]])
+        for _ in range(2):
+            chdir('..')
+
+
 def startwin():
     global thisapp, wintitle
     with SharedMemoryManager() as smm:
         shared = smm.ShareableList(['a' * 70])
-        p = Process(target=thiswin, args=(shared,), daemon=True)   # , name='anyyyyyyyy', daemon=True
+        p = Thread(target=thiswin, args=(shared,))   # , name='anyyyyyyyy', daemon=True
         p.start()
+        # alive = p.is_alive()
         # freeze_support()
         while True:
             try:
-                if shared != smm.ShareableList(['a' * 70]) and shared[0] != 'a' * 70:
-                    try:
+                while True:
+                    # try:
+                    if shared != smm.ShareableList(['a' * 70]) and shared[0] != 'a' * 70:
                         thisapp = shared[0]
                         # wintitle = shared[1]
-                    except ValueError:
-                        pass
-            except ValueError:
-                print('value Err from thread in startwin')
-            sleep(0.5)
+                    # except Exception as exc:
+                    #     print(exc)
+
+                    if not p.is_alive():
+                        print("thiswin isn't alive")
+                        shared = smm.ShareableList(['a' * 70])
+                        p = Thread(target=thiswin, args=(shared,))
+                        p.start()  # , name='anyyyyyyyy', daemon=True
+                        print('runned')
+                    sleep(0.5)
+            except ConnectionRefusedError as exc:
+                print(exc)
+                # p.terminate()
 
 
 def thiswin(shared):
     from activewindow import getAppName  # , getTitle
     global thisapp, wintitle
     while True:
-        thisapp = getAppName()['App2']
-        if len(thisapp) > 50:
-            thisapp = thisapp[0:49]
-        # wintitle = getTitle()
-        shared[0] = thisapp
+        try:
+            thisapp = getAppName()['App2']
+            # if thisapp == 'Sledilka.py':
+            #     raise Exception('asdf!!!')
+            if len(thisapp) > 50:
+                thisapp = thisapp[0:49]
+            # wintitle = getTitle()
+            shared[0] = thisapp
+        except Exception as exc:
+            print('Exception from process:', exc)
         # shared[1] = wintitle
 
 
@@ -1175,7 +1361,7 @@ def pre_start():
           f'{blocked = }')
     if eye_save_time * 60 > (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0 \
             and eye_save_enabled:
-        print('prestart-eyesavesssssssssssssssssssssssssssssssssssssss')
+        print('prestart-eyesave')
         eye_save()
     elif eye_save_enabled and \
             eye_save_time * 60 < (eye_save_time_end - datetime.datetime.now()).total_seconds():
@@ -1331,10 +1517,10 @@ def notifications():
         print(f'{past_sid = }\n{too_little_time = }')
         if past_sid < too_little_time:
             print('too low')
-            notif("Информация", "В прошлый раз вы подозрительно мало сидели за компьютером", 3)
+            notif(phrases['info'], phrases['suspiciously little time'], 3)
         else:
-            notif("Информация", f"Время проведённое за компьютером в прошлый раз: "
-                                f"{datetime.timedelta(seconds=past_sid)}", 3)
+            notif(phrases['info'], f"{phrases['previous time:']}"
+                                   f"{datetime.timedelta(seconds=past_sid)}", 3)
         datasave()
         start = datetime.date.today()
         delta_t = today - start
