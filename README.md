@@ -1,10 +1,11 @@
 ## What is this?
 Sledilka is a program that runs on boot, monitors the time of computer use, and turns it off according to the rules specified by the user.
 
-## 1.2.3
+## 1.2.4
 
 ### Changes
- - Better multiprocessing, stability
+ - Translations
+ - Bugfixes
 
 ## How to compile?
 ### Install python packages
