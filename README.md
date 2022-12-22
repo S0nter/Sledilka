@@ -1,5 +1,5 @@
 ## What is this?
-Sledilka is a program that controls the time, runs behind the computer, and turns it off when required.
+Sledilka is a program that runs on boot, monitors the time of computer use, and turns it off according to the rules specified by the user.
 
 ## 1.2.3
 
