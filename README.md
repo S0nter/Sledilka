@@ -7,6 +7,7 @@ Sledilka is a program that runs on boot, monitors the time of computer use, and 
  - Better multiprocessing, stability
 
 ## How to compile?
+### Download Sledilka.py file
 ### Install python packages
 For compilation:
 ```
@@ -16,7 +17,7 @@ For program:
 ```
 pip install PyQt6 activewindow darkdetect
 ```
-For Windows also install these pacmkages: ```pywin32 winshell```
+For Windows also install these packages: ```pywin32 winshell```
 ### Compilation
 Run this command:
 ```
