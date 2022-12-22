@@ -7,7 +7,7 @@ from sys import argv, platform as pt
 from threading import Thread
 from time import sleep
 from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
-from PyQt6.QtGui import QPainter, QIcon, QFont, QColor, QAction
+from PyQt6.QtGui import QPainter, QIcon, QFont, QColor, QAction, QFontDatabase
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
     QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
     QDialog, QLineEdit, QScrollArea  # , QMessageBox  # QAction,
@@ -99,7 +99,7 @@ phrases = {
     'apply': 'Применить',
     'total:': 'Всего:',
     'after': 'по прошествии',
-    'whats datas?': 'На какую дату добавить?',
+    'which date add to?': 'На какую дату добавить?',
     'today': 'Сегодня',
     'app name': 'Следилка',
     'theme': 'Тема оформления',
@@ -109,6 +109,9 @@ phrases = {
 trans = ['Русский']
 tran_name = 'Русский'
 theme = th()
+font = QFont('Segoe UI.ttf', 30)
+# print(font.families(), QFontDatabase.)
+font.setFamily('Segoe UI')
 
 
 class Timer(QWidget):
@@ -250,7 +253,8 @@ class Timer(QWidget):
     def runtime(self):
         log('runtime')
         global sid
-        self.time_show.setFont(QFont('Segoe UI', 30))
+        self.time_show.setFont(font)
+        # self.time_show.setFont(QFont('Segoe UI', 30))
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         # self.time_show.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
@@ -260,57 +264,60 @@ class Timer(QWidget):
 
     def checker(self):
         global sid, sid_sess, eye_save_time_end, start, saved, stat, thisapp, wintitle
-        s = datetime.datetime.now()  # noqa
-        if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
-            saved = False
-            if self.isHidden() and not self.in_tray:
-                self.show()
-            # ???
-            Thread(target=add_to_stat).start()
-            # ???
-            if self.it == 60:  # Сейвы каждую минуту
+        try:
+            s = datetime.datetime.now()  # noqa
+            if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
+                saved = False
+                if self.isHidden() and not self.in_tray:
+                    self.show()
+                # ???
+                Thread(target=add_to_stat).start()
+                # ???
+                if self.it == 60:  # Сейвы каждую минуту
+                    Thread(target=datasave).start()
+                    self.it = 0
+                if sid_sess >= one_sess * 60 and eye_save_enabled:  # Если время сессии подошло к концу, то:
+                    log('end of sess')
+                    print('eeeeeeeeeeeeeeeeeeeendofsess')
+                    sid_sess = 0
+                    eye_save_time_end = datetime.datetime.strptime(
+                        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S') + \
+                        datetime.timedelta(minutes=eye_save_time)
+                    Thread(target=datasave).start()
+                    eye_save()
+                elif sid_sess > one_sess * 60:
+                    sid_sess = 0
+                if limited and (sid >= limit * 60 or sid >= vozm[num_days[datetime.date.today()]] * 60):
+                    print(limited, sid >= limit * 60, sid >= vozm[num_days[datetime.date.today()]] * 60)
+                    limit_out()
+                    print('liiiiiimit')
+            elif blocked or lim_activated:
+                if not self.in_tray:
+                    self.hide()
+                    self.in_tray = True
+            elif not saved and thisapp not in ['LockApp.exe', 'LockScr']:
                 Thread(target=datasave).start()
-                self.it = 0
-            if sid_sess >= one_sess * 60 and eye_save_enabled:  # Если время сессии подошло к концу, то:
-                log('end of sess')
-                print('eeeeeeeeeeeeeeeeeeeendofsess')
-                sid_sess = 0
-                eye_save_time_end = datetime.datetime.strptime(
-                    datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S') + \
-                    datetime.timedelta(minutes=eye_save_time)
-                Thread(target=datasave).start()
-                eye_save()
-            elif sid_sess > one_sess * 60:
-                sid_sess = 0
-            if limited and (sid >= limit * 60 or sid >= vozm[num_days[datetime.date.today()]] * 60):
-                print(limited, sid >= limit * 60, sid >= vozm[num_days[datetime.date.today()]] * 60)
-                limit_out()
-                print('liiiiiimit')
-        elif blocked or lim_activated:
-            if not self.in_tray:
-                self.hide()
-                self.in_tray = True
-        elif not saved and thisapp not in ['LockApp.exe', 'LockScr']:
-            Thread(target=datasave).start()
-            saved = True
-        if datetime.date.today() != start:
-            sid = 0
-            full_stat[str(start)] = stat
-            start = datetime.date.today()
-            stat = {'Sledilka.exe': 0}
-            if limited:
-                set_all_sids()
-        if theme == 'Light':
-            self.time_show.setStyleSheet("QLabel { color : black; }")
-        else:
-            self.time_show.setStyleSheet("QLabel { color : white; }")
-        if sid_sess + warn_before * 60 == one_sess * 60:  # сек + мин * 60 == мин * 60
-            notif(phrases['monitor rest'], phrases['session will be over soon'])
-            print('NOOOOOOOOOOOOOOTIFED')
-        elif limited and limit * 60 == sid + warn_before * 60:  # мин * 60 == сек + мин * 60
-            notif(phrases['limit'], phrases['limit will be over soon'])
-            print('NOOOOOOOOOOOOOOTIFED')
-        # print((datetime.datetime.now() - s).total_seconds(), 'cекунд итерация checker')
+                saved = True
+            if datetime.date.today() != start:
+                sid = 0
+                full_stat[str(start)] = stat
+                start = datetime.date.today()
+                stat = {'Sledilka.exe': 0}
+                if limited:
+                    set_all_sids()
+            if theme == 'Light':
+                self.time_show.setStyleSheet("QLabel { color : black; }")
+            else:
+                self.time_show.setStyleSheet("QLabel { color : white; }")
+            if sid_sess + warn_before * 60 == one_sess * 60:  # сек + мин * 60 == мин * 60
+                notif(phrases['monitor rest'], phrases['session will be over soon'])
+                print('NOOOOOOOOOOOOOOTIFED1', sid_sess, warn_before, one_sess)
+            elif limited and limit * 60 == sid + warn_before * 60:  # мин * 60 == сек + мин * 60
+                notif(phrases['limit'], phrases['limit will be over soon'])
+                print('NOOOOOOOOOOOOOOTIFED2', sid_sess, warn_before, one_sess)
+            # print((datetime.datetime.now() - s).total_seconds(), 'cекунд итерация checker')
+        except Exception as exc:
+            print('error in checker:', exc)
 
     def runtimesec(self):
         global sid, sid_sess
@@ -371,7 +378,7 @@ class Settings(QWidget):
         self.s_eye_sess = QLabel()
         self.s_eye_sess.setText(phrases['duration of session'])
         self.s_eye = QSpinBox()
-        self.s_eye.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        # self.s_eye.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.s_eye.setRange(1, 1440)
         self.s_eye.setSuffix(phrases['minutes'])
 
@@ -609,8 +616,7 @@ class Settings(QWidget):
             self.s_theme_list.setCurrentText(phrases['dark'])
         else:
             self.s_theme_list.setCurrentText(phrases['light'])
-        while self.s_tran_list.count() > 0:
-            self.s_tran_list.removeItem(0)
+        self.s_tran_list.clear()
         for t in trans:
             self.s_tran_list.addItem(t)
         self.s_tran_list.setCurrentText(tran_name)
@@ -815,7 +821,7 @@ class TimeAdder(QDialog):
         self.time.setSuffix(phrases['minutes'])
 
         self.dates = QComboBox()
-        self.dates.setWhatsThis(phrases['whats datas?'])
+        self.dates.setWhatsThis(phrases['which date add to?'])
         self.dates.setEditable(True)
         ln = QLineEdit()
         ln.setPlaceholderText('YYYY-MM-DD')
@@ -918,6 +924,8 @@ class Translator(QWidget):
                 phrases[w.placeholderText()] = w.placeholderText()
         tran_name = phrases['translation name']
         sid += 2
+        if tran_name not in trans:
+            trans.append(tran_name)
         transave()
         datasave()
         window = Timer()
