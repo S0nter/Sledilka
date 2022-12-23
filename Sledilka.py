@@ -253,8 +253,8 @@ class Timer(QWidget):
     def runtime(self):
         log('runtime')
         global sid
-        self.time_show.setFont(font)
-        # self.time_show.setFont(QFont('Segoe UI', 30))
+        # self.time_show.setFont(font)
+        self.time_show.setFont(QFont('Segoe UI', 30))
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         # self.time_show.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
