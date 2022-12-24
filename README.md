@@ -6,6 +6,7 @@ Sledilka is a program that runs on boot, monitors the time of computer use, and 
 ### Changes
  - Translations
  - Bugfixes
+ - Moved from PyQt6 to PySide6
 
 ## How to compile?
 ### Install python packages
