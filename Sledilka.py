@@ -6,11 +6,11 @@ from os import listdir, chdir, mkdir, path, popen, getcwd
 from sys import argv, platform as pt
 from threading import Thread
 from time import sleep
-from PyQt6.QtCore import QSize, Qt, QEvent, QTimer
-from PyQt6.QtGui import QPainter, QIcon, QFont, QColor, QAction, QFontDatabase
-from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
+from PySide6.QtCore import QSize, Qt, QTimer  # QEvent,
+from PySide6.QtGui import QPainter, QIcon, QFont, QColor, QAction
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
     QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
-    QDialog, QLineEdit, QScrollArea  # , QMessageBox  # QAction,
+    QDialog, QLineEdit, QScrollArea, QStyleFactory  # , QMessageBox  # QAction,
 from darkdetect import theme as th
 
 platform = pt
@@ -125,7 +125,8 @@ class Timer(QWidget):
         self.setWindowIcon(app_icon)
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.offset = None
+        self.offset = None  # Перемещение окна PyQt6
+        self.oldPos = None  # Перемещение окна PySide6
         self.in_tray = False
         self.installEventFilter(self)
         self.time_show = QLabel(str(datetime.timedelta(seconds=sid)))
@@ -230,18 +231,37 @@ class Timer(QWidget):
             painter.setBrush(QColor(43, 43, 43))
         painter.drawRoundedRect(self.rect(), 25, 25)  # Закругление краёв
 
-    def eventFilter(self, source, event):  # Перетаскивание окна
-        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-            self.offset = event.pos()            # PyQt6
-        elif event.type() == QEvent.Type.MouseMove and self.offset is not None:
-            self.move(self.pos() - self.offset + event.pos())
-            return True
-        elif event.type() == QEvent.Type.MouseButtonRelease:
-            self.offset = None
-        return super().eventFilter(source, event)
+    # def eventFilter(self, source, event):  # Перетаскивание окна PyQt6
+    #     if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+    #         # self.offset = event.pos()            # PyQt6
+    #         self.offset = event.position()            # PySide6
+    #     elif event.type() == QEvent.Type.MouseMove and self.offset is not None:
+    #         self.move(self.pos() - self.offset + event.position())
+    #         return True
+    #     elif event.type() == QEvent.Type.MouseButtonRelease:
+    #         self.offset = None
+    #     return super().eventFilter(source, event)
+
+    def mousePressEvent(self, event):  # Перетаскивание окна PySide6
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.oldPos = event.globalPosition().toPoint()
+            # self.oldPos = event.globalPos()
+
+    def mouseMoveEvent(self, event):
+        if self.oldPos is not None:
+            delta = event.globalPosition().toPoint() - self.oldPos
+            self.move(self.pos() + delta)
+            self.oldPos = event.globalPosition().toPoint()  # .globalPos()
+            # delta = event.globalPos() - self.oldPos
+            # self.move(self.pos() + delta)
+            # self.oldPos = event.globalPos()
+
+    def mouseReleaseEvent(self, event):
+        self.oldPos = None
 
     def contextMenuEvent(self, e):  # Контекстное меню
         self.context.exec(self.mapToGlobal(e.pos()))
+        # self.context.exec_(self.mapToGlobal(e.pos()))
 
     def restore_window(self, reason):  # Возвращение окна из трея
         if reason != QSystemTrayIcon.ActivationReason.Context:
@@ -309,10 +329,11 @@ class Timer(QWidget):
                 self.time_show.setStyleSheet("QLabel { color : black; }")
             else:
                 self.time_show.setStyleSheet("QLabel { color : white; }")
-            if sid_sess + warn_before * 60 == one_sess * 60:  # сек + мин * 60 == мин * 60
+            if warn_before != 0 and eye_save_enabled and sid_sess + warn_before * 60 == one_sess * 60:
+                # сек + мин * 60 == мин * 60
                 notif(phrases['monitor rest'], phrases['session will be over soon'])
                 print('NOOOOOOOOOOOOOOTIFED1', sid_sess, warn_before, one_sess)
-            elif limited and limit * 60 == sid + warn_before * 60:  # мин * 60 == сек + мин * 60
+            elif warn_before != 0 and limited and limit * 60 == sid + warn_before * 60:  # мин * 60 == сек + мин * 60
                 notif(phrases['limit'], phrases['limit will be over soon'])
                 print('NOOOOOOOOOOOOOOTIFED2', sid_sess, warn_before, one_sess)
             # print((datetime.datetime.now() - s).total_seconds(), 'cекунд итерация checker')
@@ -577,7 +598,6 @@ class Settings(QWidget):
             tran_name = self.s_tran_list.currentText()
             gettran(tran_name)
             changed = True
-
         datasave()
 
         if changed:
@@ -585,6 +605,7 @@ class Settings(QWidget):
             window = Timer()
 
     def update_interface(self):
+        global tran_name
         self.s_one_sess_gr.setChecked(eye_save_enabled)
         self.s_eye.setValue(one_sess)
         if eye_save_type == 0:  # Определение типа выкла
@@ -617,9 +638,14 @@ class Settings(QWidget):
         else:
             self.s_theme_list.setCurrentText(phrases['light'])
         self.s_tran_list.clear()
+        # if phrases['translation name'] != tran_name:
+        #     tran_name = phrases['translation name']
+        if tran_name not in trans:
+            trans.append(tran_name)
         for t in trans:
             self.s_tran_list.addItem(t)
         self.s_tran_list.setCurrentText(tran_name)
+        print('update_interface: tran_name =', tran_name, phrases['translation name'])
 
         if warn_before > 0:
             self.s_warn_gr.setChecked(True)
@@ -664,8 +690,8 @@ class Block(QWidget):
         self.b_timer = QLabel()
         self.b_timer.setStyleSheet("color: blue;")
         if not lim_activated:
-            self.b_timer.setText(self.b_timer.setText(str(
-                datetime.timedelta(seconds=int((eye_save_time_end - datetime.datetime.now()).total_seconds())))))
+            self.b_timer.setText(str(
+                datetime.timedelta(seconds=int((eye_save_time_end - datetime.datetime.now()).total_seconds()))))
         else:
             self.b_timer.setText('')
         self.b_timer.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -914,21 +940,28 @@ class Translator(QWidget):
         self.hide()
 
     def apply(self):
-        global window, sid, tran_name
+        global window, sid, tran_name, phrases
         # self.save()
+        translation = {}
         for w in self.lines:
-            print(w.placeholderText(), w.text())
+            # print(w.placeholderText(), w.text())
             if w.text() != '':
-                phrases[w.placeholderText()] = w.text()
+                translation[w.placeholderText()] = w.text()
             else:
-                phrases[w.placeholderText()] = w.placeholderText()
-        tran_name = phrases['translation name']
-        sid += 2
-        if tran_name not in trans:
-            trans.append(tran_name)
-        transave()
-        datasave()
-        window = Timer()
+                translation[w.placeholderText()] = w.placeholderText()
+        tran_name = translation['translation name']
+        # sid += 2
+        if translation != phrases:
+            if tran_name not in trans:
+                trans.append(tran_name)
+                transave()
+            phrases = translation
+            transave()
+            datasave()
+            # del window
+            window = Timer()
+        else:
+            print('translation did not changed')
 
 
 def sort(dict_):
@@ -967,7 +1000,7 @@ def sett_upd():
 def dataload():
     log('dataload')
     global sid, stat, start, delta_t, today, one_sess, eye_save_type, eye_save_time, sett, full_stat, stat_sids, \
-        warn_before, eye_save_time_end, eye_save_enabled, limited, limit, lim_off_type, theme
+        warn_before, eye_save_time_end, eye_save_enabled, limited, limit, lim_off_type, theme, tran_name
 
     def readsett():
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett, sid, eye_save_enabled, limited, limit, \
@@ -1039,7 +1072,7 @@ def dataload():
     log('sett')
     try:
         readsett()
-        gettran(tran_name)  # noqa
+        gettran(tran_name)
     except FileNotFoundError:
         log('except FileNotFoundError:')
         make_file('sett')
@@ -1052,6 +1085,8 @@ def dataload():
     finally:
         readsett()
         gettran(tran_name)
+    # if tran_name != phrases['translation name']:
+    #     tran_name = phrases['translation name']
     log('stat')
     try:
         readstat()
@@ -1121,23 +1156,38 @@ def readstat():
 
 
 def gettran(name):
-    global phrases, trans
-    try:
-        chdir('Translations')
-    except FileNotFoundError:
-        mkdir('Translations')
-        chdir('Translations')
-    print(listdir(), 'llllllllllll')
-    trans = [t.split('.')[0] for t in listdir()]
-    print(f'{trans = }')
-    try:
+    global phrases, trans, tran_name
+
+    def get():
+        global phrases, tran_name
         with open(f'{name}.sltr', 'r') as file:
             phrases1 = dict(json.load(file))
             for k in phrases1.keys():
                 phrases[k] = phrases1[k]
+        tran_name = name
+        if phrases['translation name'] != name:
+            phrases['translation name'] = name
+            chdir('..')
+            transave()
+            chdir('Translations')
+
+    try:
+        chdir('Translations')
+    except FileNotFoundError:
+        transave()
+        chdir('Translations')
+    print(listdir(), 'llllllllllll', getcwd())
+    trans = [t.split('.')[0] for t in listdir()]
+    print(f'{trans = }')
+    try:
+        get()
+    except FileNotFoundError:
+        print(f'FileNotFoundError from gettran("{name}")')
+        transave()
     except Exception as exc:
         print('cannot get translation:', exc)
     finally:
+        get()
         chdir('..')
 
 
@@ -1492,6 +1542,7 @@ def add_clip():
     global app
     if app.clipboard() is not None:
         app.clipboard().setText(str(datetime.timedelta(seconds=sid)))
+        print(f'Copied: {str(datetime.timedelta(seconds=sid))}')
 
 
 def to_bool(_str):
@@ -1580,6 +1631,8 @@ def skok_vozm():
 if __name__ == '__main__':
     dataload()
     app = QApplication(argv)
+    print(QStyleFactory.keys())
+    # app.setStyle(QStyleFactory.keys()[0])
     app_icon = QIcon('icon.ico')
     app.setWindowIcon(app_icon)
     pre_start()
