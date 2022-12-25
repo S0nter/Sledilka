@@ -75,7 +75,7 @@ phrases = {
     'need monitor rest for': 'Требовать отдыха от монитора на',
     'monitor rest': 'Отдых от монитора',
     'limit': 'Лимит времени',
-    'your time is over': 'Ваше время истекло 👎',
+    'your time is over': 'Ваше время истекло',
     'limit will be over soon': 'Лимит времени скоро закончится',
     'session will be over soon': 'Сессия скоро закончится',
     'duration of session': 'Длительность сеанса',
@@ -1160,6 +1160,7 @@ def gettran(name):
 
     def get():
         global phrases, tran_name
+        print('aaaaaaaaaaaaaaa', tran_name, phrases)
         with open(f'{name}.sltr', 'r') as file:
             phrases1 = dict(json.load(file))
             for k in phrases1.keys():
@@ -1336,6 +1337,7 @@ def transave():
     except FileNotFoundError:
         mkdir('Translations')
         chdir('Translations')
+    print('aaaaaaaaaaaaaaa', tran_name, phrases)
     with open(f'{tran_name}.sltr', 'w') as file:
         json.dump(phrases, file, ensure_ascii=False)
         chdir('..')
@@ -1631,8 +1633,6 @@ def skok_vozm():
 if __name__ == '__main__':
     dataload()
     app = QApplication(argv)
-    print(QStyleFactory.keys())
-    # app.setStyle(QStyleFactory.keys()[0])
     app_icon = QIcon('icon.ico')
     app.setWindowIcon(app_icon)
     pre_start()
