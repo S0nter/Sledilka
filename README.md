@@ -22,5 +22,5 @@ For Windows also install these packages: ```pywin32 winshell```
 ### Compilation
 Run this command:
 ```
-python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt6 --disable-console Sledilka.py
+python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyside6 --disable-console Sledilka.py
 ```
