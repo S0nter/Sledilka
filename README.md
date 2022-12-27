@@ -1,5 +1,6 @@
 ## What is this?
 Sledilka is a program that runs on boot, monitors the time of computer use, and turns it off according to the rules specified by the user.
+Works on "M OS"!
 
 ## 1.2.4
 
