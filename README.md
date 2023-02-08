@@ -24,7 +24,7 @@ pip install PyQt6 activewindow darkdetect
 ```
 For Windows also install these packages: ```pywin32 winshell```
 ### Compilation
-Run this command:
+Run this command to compile manually:
 ```
 python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyside6 --disable-console Sledilka.py
 ```
