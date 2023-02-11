@@ -26,11 +26,11 @@ pip install nuitka zstandard ordered-set
 ```
 For program:
 ```
-pip install PyQt6 activewindow darkdetect
+pip install PyQt5 activewindow darkdetect
 ```
 For Windows also install these packages: ```pywin32 winshell```
 ### Compilation
 Run this command to compile manually:
 ```
-python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyside6 --disable-console Sledilka.py
+python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt5 --disable-console Sledilka.py
 ```
