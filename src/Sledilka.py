@@ -1026,7 +1026,6 @@ class Startup(QWidget):
 
         self.layout.addLayout(self.done_lay)
 
-
     def on_clicked(self, index):
         self.lang = self.model.itemFromIndex(index).text()
         gettran(self.lang)
