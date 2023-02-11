@@ -5,6 +5,9 @@ Sledilka is a program that runs on boot, monitors the time of computer use, and 
 
 This is not parental control, it's self-control time tracker. 
 
+## Gallery
+![Sledilka](/gallery/Interface.png)
+
 ## 1.2.4
 
 ### Changes
