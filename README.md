@@ -8,12 +8,15 @@ This is not parental control, it's self-control time tracker.
 ## Gallery
 ![Sledilka](/gallery/Interface.png)
 
-## 1.2.4
+## 1.2.5
 
 ### Changes
- - Translations
- - Bugfixes
- - Moved from PyQt6 to PySide6
+ - Added "translation chooser" to the first program start
+ - Moved from PySide6 to PyQt5 for better themes on linux
+ - Multiple files
+ - Added "About Qt" button
+ - Added theme changer for timer and interface
+ - Added official English translation
 
 ## How to compile?
 ### Install python packages
