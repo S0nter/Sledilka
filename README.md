@@ -11,7 +11,7 @@ This is not parental control, it's self-control time tracker.
 ## 1.2.5
 
 ### Changes
- - Added "translation chooser" to the first program start
+ - Added "translation chooser" when the program start for the first time
  - Moved from PySide6 to PyQt5 for better themes on linux
  - Multiple files
  - Added "About Qt" button
