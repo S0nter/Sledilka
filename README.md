@@ -1,7 +1,7 @@
 ## What is this?
 Sledilka is a program that runs on boot, monitors the time of computer use, and turns it off according to the rules specified by the user.
 
-~~Works on "M OS"!~~<br> I should find a way to compile without `glibc`
+Works on "M OS"!
 
 This is not parental control, it's self-control time tracker. 
 
