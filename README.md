@@ -34,10 +34,15 @@ For Windows also install these packages: ```pywin32 winshell```
 You may compile it or use as python package (better):
 
 ### 1) Compilation
-Run this comma:
+Run this command:
 ```
 python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt5 --disable-console Sledilka.py
 ```
 ### 2) Python installation
+#### 2.1) System installation
+ - Run `setup.sh` file
+ - Run `python3 -m Sledilka` in your directory for Sledilka
+#### 2.2) User installation
+ - Change second line to `python3 setup.py build sdist install --user`
  - Run `setup.sh` file
  - Run `python3 -m Sledilka` in your directory for Sledilka
