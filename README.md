@@ -39,10 +39,10 @@ python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --p
 ```
 ### 2) Python installation
 #### 2.1) System installation
+ - Change third line to `sudo python3 setup.py build sdist install`
  - Run `setup.sh` file
  - Run `python3 -m Sledilka` in your directory for Sledilka
 #### 2.2) User installation
- - Change second line to `python3 setup.py build sdist install --user`
  - Run `setup.sh` file
  - Run `python3 -m Sledilka` in your directory for Sledilka
 ### 3) Arch linux installation
