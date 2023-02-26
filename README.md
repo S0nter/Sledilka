@@ -8,7 +8,7 @@ This is not parental control, it's self-control time tracker.
 ## Gallery
 ![Sledilka](/gallery/Interface.png)
 
-## 1.2.5
+## 1.2.6
 
 ### Changes
  - Added "translation chooser" when the program start for the first time
@@ -46,3 +46,5 @@ python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --p
  - Change second line to `python3 setup.py build sdist install --user`
  - Run `setup.sh` file
  - Run `python3 -m Sledilka` in your directory for Sledilka
+### 3) Arch linux installation
+ - Copy the PKGBUILD file and run `makepkg -sir`
