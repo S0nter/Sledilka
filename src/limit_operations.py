@@ -16,4 +16,4 @@ def hiber():
     if platform == 'win32':
         print(popen('shutdown -h').read())
     elif platform == 'linux':
-        pass
+        print(popen('loginctl hibernate').read())

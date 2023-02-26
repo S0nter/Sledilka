@@ -1,11 +1,9 @@
-#!/usr/bin/python
 import os
 import csv
 import datetime
 import shutil
-from threading import Thread
+from threading import Thread, Timer as ThTimer
 from time import sleep
-from darkdetect import theme as th
 
 from base_functions import *
 from file_operations import *
@@ -17,9 +15,10 @@ from PyQt5.QtCore import QSize, Qt, QTimer
 from PyQt5.QtGui import QPainter, QIcon, QFont, QColor, QFontDatabase, QStandardItem, QStandardItemModel
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
     QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
-    QDialog, QLineEdit, QScrollArea, QStyleFactory, QAction, QListView, QStyle
-
+    QDialog, QLineEdit, QScrollArea, QStyleFactory, QAction, QListView, QStyle, QCheckBox, QColorDialog
 ###########
+
+QT_VERSION: int = 5
 
 limited = False
 limit = 0  # Возможное колличество времени за день (мин)
@@ -45,19 +44,6 @@ blocked = False
 start = datetime.date.today()
 today = datetime.date.today()
 delta_t = start - today
-sett = {'one_sess': 0,
-        'eye_save_type': 0,
-        'eye_save_time': 1,
-        'eye_save_time_end': str(datetime.datetime.now().replace(microsecond=0)),
-        'eye_save_enabled': False,
-        'limited': False,
-        'limit': 0,
-        'lim_off_type': 0,
-        'theme': 'Light',
-        'warn_before': 0,
-        # 'in_tray': False
-        'tran_name': 'Русский'
-        }  # Словарь сохраняемых параметров. Используется только для работы с файлами
 thisapp = 'Sledilka'
 wintitle = ''
 saved = False
@@ -82,11 +68,14 @@ phrases = {
     'session will be over soon': 'Сессия скоро закончится',
     'duration of session': 'Длительность сеанса',
     'by the end of the session:': 'При окончании сеанса:',
+    'session is running for:': '\nСеанс уже длится: ',
+    'time for today': 'Сегодняшнее время: ',
     'time adder title': 'Добавить время',
     'suspiciously little time': 'В прошлый раз вы подозрительно мало сидели за компьютером',
     'previous time:': 'Время проведённое за компьютером в прошлый раз: ',
     'application': 'Приложение',
     'preliminary notifications': 'Предварительные оповещения',
+    'behaviour': 'Поведение',
     'show notifications before': 'Показывать уведомления за ',
     'info': 'Информация',
     'translations': 'Переводы',
@@ -107,17 +96,47 @@ phrases = {
     'app name': 'Следилка',
     'theme': 'Тема оформления',
     'timer theme': 'Тема таймера',
+    'text color': 'Цвет текста',
+    'background color': 'Цвет фона',
     'interface appearance': 'Оформление интерфейса',
     'dark': 'Тёмная',
     'light': 'Светлая',
-    'startup window title': 'Начальная настройка'
+    'custom theme': 'Настраиваемая',
+    'corner smoothing': 'Сглаживание углов:',
+    'startup window title': 'Начальная настройка',
+    'hide on startup': 'Скрывать при запуске',
 }
 trans = ['Русский']
 tran_name = 'Русский'
-theme = th()
+theme = 'Light'
+prev_theme = theme
+default_timer_theme = {
+    'xRadius': 25,
+    'yRadius': 25,
+    'base_color': '#ffffff',
+    'text_color': '#000000'
+}
+timer_theme = default_timer_theme.copy()
+prev_timer_theme = {}
 
 need_to_show_startup = False
-font = QFont()  # Changed in notifications
+hidden_startup = False
+font = QFont()  # Changed in notifications()
+
+default_sett = {'one_sess': 0,
+                'eye_save_type': 0,
+                'eye_save_time': 1,
+                'eye_save_time_end': str(datetime.datetime.now().replace(microsecond=0)),
+                'eye_save_enabled': False,
+                'limited': False,
+                'limit': 0,
+                'lim_off_type': 0,
+                'theme': 'Light',
+                'warn_before': 0,
+                'tran_name': 'Русский',
+                'hidden_startup': False,
+                'timer_theme': default_timer_theme}
+sett = default_sett.copy()  # Словарь сохраняемых параметров. Используется только для работы с файлами
 
 
 class Timer(QWidget):
@@ -137,10 +156,6 @@ class Timer(QWidget):
         self.installEventFilter(self)
         self.time_show = QLabel(str(datetime.timedelta(seconds=sid)))
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if theme == 'Light':
-            self.time_show.setStyleSheet("QLabel { color : black; }")
-        else:
-            self.time_show.setStyleSheet("QLabel { color : white; }")
 
         self.sett_w = Settings()
         self.stat = Statistic()
@@ -173,14 +188,16 @@ class Timer(QWidget):
         self.checker_timer.timeout.connect(self.checker)  # noqa
         self.checker_timer.setInterval(1000)
 
-        if not lim_activated and not blocked:
+        if not lim_activated and not blocked and not hidden_startup:
+            print('shown:', hidden_startup)
             self.show()
         else:
             self.hide()
-        self.it = 0  # Итерации
+            self.in_tray = True
+            print('hidden', hidden_startup, self.in_tray)
+        self.it = 0  # Итерации сохранения
         self.runtime()
 
-    # noinspection PyUnresolvedReferences
     def _actions(self):
         self.copy = QAction(phrases['copy'], self)
         self.copy.triggered.connect(self.sid_add)  # noqa
@@ -189,7 +206,7 @@ class Timer(QWidget):
         self.a_stat.triggered.connect(self.stat.show)  # noqa
 
         self.a_sett = QAction(phrases['settings'], self)
-        self.a_sett.triggered.connect(self.sett_w.show)
+        self.a_sett.triggered.connect(self.sett_w.show)  # noqa
 
         self.a_show = QAction(phrases['show'], self)
         self.a_show.triggered.connect(self.show)  # noqa
@@ -220,7 +237,9 @@ class Timer(QWidget):
         self.in_tray = False
 
     def hideEvent(self, event):
+        print('hide_event', self.in_tray)
         self.in_tray = True
+        print('hide_event_end', self.in_tray)
 
     def closeEvent(self, event):  # Запрет закрытия окна
         event.ignore()
@@ -230,24 +249,34 @@ class Timer(QWidget):
         if sid > 36000:
             self.setFixedSize(165, 120)
         painter = QPainter(self)
-        ##  QT6  ##
-        # painter.setRenderHint(QPainter.renderHints(painter).Antialiasing)  # Убирание некрасивых краёв PyQt6
-        ###########
-        ##  QT5  ##
-        painter.setRenderHint(QPainter.Antialiasing)
-        ###########
+        if QT_VERSION == 6:  # Сглаживание краёв
+            ##  QT6  ##
+            painter.setRenderHint(QPainter.renderHints(painter).Antialiasing)
+            ###########
+        elif QT_VERSION == 5:
+            ##  QT5  ##
+            painter.setRenderHint(QPainter.Antialiasing)
+            ###########
         if theme == 'Light':
             painter.setBrush(Qt.GlobalColor.white)
-        else:
+            self.time_show.setStyleSheet("QLabel { color : black; }")
+        elif theme == 'Dark':
             painter.setBrush(QColor(43, 43, 43))
-        painter.drawRoundedRect(self.rect(), 25, 25)  # Закругление краёв
+            self.time_show.setStyleSheet("QLabel { color : white; }")
+        else:
+            painter.setBrush(QColor(timer_theme['base_color']))
+            self.time_show.setStyleSheet("QLabel { color : "
+                                         f"{timer_theme['text_color']}"
+                                         "; }")
+        painter.drawRoundedRect(self.rect(), timer_theme['xRadius'], timer_theme['yRadius'])  # Закругление краёв
 
     # def eventFilter(self, source, event):  # Перетаскивание окна PyQt6
     #     if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-    #         # self.offset = event.pos()            # PyQt6
-    #         self.offset = event.position()            # PySide6
+    #         self.offset = event.pos()            # PyQt6
+    #         # self.offset = event.position()            # PySide6
     #     elif event.type() == QEvent.Type.MouseMove and self.offset is not None:
-    #         self.move(self.pos() - self.offset + event.position())
+    #         # self.move(self.pos() - self.offset + event.position())
+    #         self.move(self.pos() - self.offset + event.pos())
     #         return True
     #     elif event.type() == QEvent.Type.MouseButtonRelease:
     #         self.offset = None
@@ -260,27 +289,31 @@ class Timer(QWidget):
 
     def mouseMoveEvent(self, event):
         if self.oldPos is not None:
-            ##  QT6  ##
-            # delta = event.globalPosition().toPoint() - self.oldPos
-            # self.move(self.pos() + delta)
-            # self.oldPos = event.globalPosition().toPoint()  # .globalPos()
-            ###########
-            ##  QT5  ##
-            delta = event.globalPos() - self.oldPos
-            self.move(self.pos() + delta)
-            self.oldPos = event.globalPos()
-            ###########
+            if QT_VERSION == 6:
+                ##  QT6  ##
+                delta = event.globalPosition().toPoint() - self.oldPos
+                self.move(self.pos() + delta)
+                self.oldPos = event.globalPosition().toPoint()  # .globalPos()
+                ###########
+            elif QT_VERSION == 5:
+                ##  QT5  ##
+                delta = event.globalPos() - self.oldPos
+                self.move(self.pos() + delta)
+                self.oldPos = event.globalPos()
+                ###########
 
     def mouseReleaseEvent(self, event):
         self.oldPos = None
 
     def contextMenuEvent(self, e):  # Контекстное меню
-        ##  QT6  ##
-        # self.context.exec(self.mapToGlobal(e.pos()))
-        ###########
-        ##  QT5  ##
-        self.context.exec_(self.mapToGlobal(e.pos()))
-        ###########
+        if QT_VERSION == 6:
+            ##  QT6  ##
+            self.context.exec(self.mapToGlobal(e.pos()))
+            ###########
+        elif QT_VERSION == 5:
+            ##  QT5  ##
+            self.context.exec_(self.mapToGlobal(e.pos()))
+            ###########
 
     def restore_window(self, reason):  # Возвращение окна из трея
         if reason != QSystemTrayIcon.ActivationReason.Context:
@@ -308,6 +341,7 @@ class Timer(QWidget):
         if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
             saved = False
             if self.isHidden() and not self.in_tray:
+                print('restored from tray: checker', hidden_startup)
                 self.show()
             # ???
             Thread(target=add_to_stat).start()
@@ -360,6 +394,8 @@ class Timer(QWidget):
         # print(f'{thisapp = }, {blocked = }')
         if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
             self.time_show.setText(str(datetime.timedelta(seconds=sid)))
+            self.tray_icon.setToolTip(f"{phrases['time for today']}{datetime.timedelta(seconds=sid)}"
+                                      f"{phrases['session is running for:']}{datetime.timedelta(seconds=sid_sess)}")
             sid += 1
             sid_sess += 1
             self.it += 1
@@ -390,7 +426,8 @@ class Settings(QWidget):
 
         self._set_eye_save()
         self._set_limits()
-        self._set_warn_before()
+        self._set_notifications()
+        self._set_behaviour()
         self._set_color()
         self._set_buttons()
 
@@ -471,11 +508,11 @@ class Settings(QWidget):
         self.s_lim_lay.addWidget(self.s_lim_end_list)
         self.s_lim_lay.addWidget(self.s_lim_lab)
         self.s_lim_lay.addWidget(self.s_limit)
-        self.s_lim_lay.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        # self.s_lim_lay.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
 
         self.layout.addWidget(self.s_lim_gr)
 
-    def _set_warn_before(self):  # Предварительные оповещения
+    def _set_notifications(self):  # Предварительные оповещения и т. д.
         self.s_warn_gr = QGroupBox(phrases['preliminary notifications'])
         self.s_warn_gr.setCheckable(True)
 
@@ -490,6 +527,17 @@ class Settings(QWidget):
 
         self.layout.addWidget(self.s_warn_gr)
 
+    def _set_behaviour(self):
+        self.s_behav_gr = QGroupBox(phrases['behaviour'])
+
+        self.s_behav = QCheckBox()
+        self.s_behav.setText(phrases['hide on startup'])
+
+        self.s_behav_gr_lay = QVBoxLayout(self.s_behav_gr)
+        self.s_behav_gr_lay.addWidget(self.s_behav)
+
+        self.layout.addWidget(self.s_behav_gr)
+
     def _set_color(self):
         self.s_theme_gr = QGroupBox(phrases['theme'])
 
@@ -498,6 +546,39 @@ class Settings(QWidget):
         self.s_theme_list = QComboBox()
         self.s_theme_list.addItem(phrases['dark'])
         self.s_theme_list.addItem(phrases['light'])
+        self.s_theme_list.addItem(phrases['custom theme'])
+        self.s_theme_list.currentIndexChanged.connect(self.color_changes)  # noqa
+
+        self.s_custom_theme_lay = QHBoxLayout()
+
+        self.s_custom_theme_text_color = QPushButton(phrases['text color'])
+        self.s_custom_theme_text_color.clicked.connect(set_text_color)  # noqa
+        self.s_custom_theme_lay.addWidget(self.s_custom_theme_text_color)
+        self.s_custom_theme_background_color = QPushButton(phrases['background color'])
+        self.s_custom_theme_background_color.clicked.connect(set_background_color)  # noqa
+        self.s_custom_theme_lay.addWidget(self.s_custom_theme_background_color)
+        # self.s_custom_theme_round_lay = QHBoxLayout()
+        # self.s_custom_theme_round_text = QLabel(phrases['corner smoothing'])
+        # self.s_custom_theme_round_x = QSpinBox()
+        # self.s_custom_theme_round_x.setValue(timer_theme['xRadius'])
+        # self.s_custom_theme_round_x.setSuffix(' x')
+        # self.s_custom_theme_round_x.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        #
+        # self.s_custom_theme_round_y = QSpinBox()
+        # self.s_custom_theme_round_y.setValue(timer_theme['yRadius'])
+        # self.s_custom_theme_round_y.setSuffix(' y')
+        # self.s_custom_theme_round_y.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # self.s_custom_theme_round_lay.addWidget(self.s_custom_theme_round_text)
+        # self.s_custom_theme_round_lay.addWidget(self.s_custom_theme_round_x)
+        # self.s_custom_theme_round_lay.addWidget(self.s_custom_theme_round_y)
+
+        # self.color = QPushButton()
+        # self.color_dialog = QColorDialog()
+        # self.color.clicked.connect(self.color_dialog.show)  # noqa
+        #
+        # self.s_custom_theme_lay.addWidget(self.color)
+        # self.s_custom_theme_lay.addLayout(self.s_custom_theme_round_lay)
+
         self.s_theme_lay.addWidget(self.s_theme_text)
         self.s_theme_lay.addWidget(self.s_theme_list)
 
@@ -518,6 +599,7 @@ class Settings(QWidget):
 
         self.s_theme_gr_lay = QVBoxLayout(self.s_theme_gr)
         self.s_theme_gr_lay.addLayout(self.s_theme_lay)
+        self.s_theme_gr_lay.addLayout(self.s_custom_theme_lay)
         self.s_theme_gr_lay.addLayout(self.s_style_lay)
         self.s_theme_gr_lay.addLayout(self.s_tran_lay)
 
@@ -584,47 +666,33 @@ class Settings(QWidget):
 
     def sett_save(self):
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, eye_save_enabled, limited, lim_off_type, \
-            limit, theme, warn_before, tran_name, window, sid, phrases
+            limit, theme, warn_before, tran_name, window, sid, phrases, hidden_startup, prev_timer_theme, prev_theme
         one_sess = self.s_eye.value()
         eye_save_enabled = self.s_one_sess_gr.isChecked()  # Длительность сеанса
         # eye_save_time_end = datetime.datetime.now().replace(microsecond=0) + \
         #     datetime.timedelta(minutes=eye_save_time)
-        if self.s_eye_sess_end_list.currentText() == phrases['shutdown']:  # Определение типа выкла
-            eye_save_type = 0
-        elif self.s_eye_sess_end_list.currentText() == phrases['hiber']:
-            eye_save_type = 1
-        elif self.s_eye_sess_end_list.currentText() == phrases['restart']:
-            eye_save_type = 2
-        elif self.s_eye_sess_end_list.currentText() == phrases['to lock scr']:
-            eye_save_type = 3
-        elif self.s_eye_sess_end_list.currentText() == phrases['lock scr']:
-            eye_save_type = 4
+        eye_save_type = self.s_eye_sess_end_list.currentIndex()  # Определение типа выкла
         eye_save_time = self.s_eye_rest_spin.value()
 
         limited = self.s_lim_gr.isChecked()  # Лимит
-        if self.s_lim_end_list.currentText() == phrases['shutdown']:  # Определение типа выкла
-            lim_off_type = 0
-        elif self.s_lim_end_list.currentText() == phrases['hiber']:
-            lim_off_type = 1
-        elif self.s_lim_end_list.currentText() == phrases['restart']:
-            lim_off_type = 2
-        elif self.s_lim_end_list.currentText() == phrases['to lock scr']:
-            lim_off_type = 3
-        elif self.s_lim_end_list.currentText() == phrases['lock scr']:
-            lim_off_type = 4
+        lim_off_type = self.s_lim_end_list.currentIndex()  # Определение типа выкла
         limit = self.s_limit.value()
         print(f'{sett["limited"] = }, {self.s_lim_end_list.currentText() = } - {sett["lim_off_type"] = }, '
               f'{sett["limit"] = }')
         print(f'{sett["eye_save_enabled"] = }')
 
-        if self.s_theme_list.currentText() == phrases['dark']:
+        hidden_startup = self.s_behav.isChecked()
+
+        if self.s_theme_list.currentIndex() == 0:  # Dark theme
             theme = 'Dark'
-        else:
+            # window.time_show.setStyleSheet("QLabel { color : white; }")
+        elif self.s_theme_list.currentIndex() == 1:  # Light theme
             theme = 'Light'
-        if theme == 'Light':
-            window.time_show.setStyleSheet("QLabel { color : black; }")
+            # window.time_show.setStyleSheet("QLabel { color : black; }")
         else:
-            window.time_show.setStyleSheet("QLabel { color : white; }")
+            theme = 'Custom'
+            prev_timer_theme = timer_theme.copy()
+        prev_theme = theme
         if self.s_warn_gr.isChecked():
             warn_before = self.s_warn.value()
         else:
@@ -645,35 +713,28 @@ class Settings(QWidget):
         global tran_name
         self.s_one_sess_gr.setChecked(eye_save_enabled)
         self.s_eye.setValue(one_sess)
-        if eye_save_type == 0:  # Определение типа выкла
-            self.s_eye_sess_end_list.setCurrentText(phrases['shutdown'])
-        elif eye_save_type == 1:
-            self.s_eye_sess_end_list.setCurrentText(phrases['hiber'])
-        elif eye_save_type == 2:
-            self.s_eye_sess_end_list.setCurrentText(phrases['restart'])
-        elif eye_save_type == 3:
-            self.s_eye_sess_end_list.setCurrentText(phrases['to lock scr'])
-        elif eye_save_type == 4:
-            self.s_eye_sess_end_list.setCurrentText(phrases['lock scr'])
+        self.s_eye_sess_end_list.setCurrentIndex(eye_save_type)
         self.s_eye_rest_spin.setValue(eye_save_time)
 
         self.s_lim_gr.setChecked(limited)
-        if lim_off_type == 0:  # Определение типа выкла
-            self.s_lim_end_list.setCurrentText(phrases['shutdown'])
-        elif lim_off_type == 1:
-            self.s_lim_end_list.setCurrentText(phrases['hiber'])
-        elif lim_off_type == 2:
-            self.s_lim_end_list.setCurrentText(phrases['restart'])
-        elif lim_off_type == 3:
-            self.s_lim_end_list.setCurrentText(phrases['to lock scr'])
-        elif lim_off_type == 4:
-            self.s_lim_end_list.setCurrentText(phrases['lock scr'])
+        self.s_lim_end_list.setCurrentIndex(lim_off_type)
         self.s_limit.setValue(limit)
+
+        self.s_behav.setChecked(hidden_startup)
 
         if theme == 'Dark':
             self.s_theme_list.setCurrentText(phrases['dark'])
-        else:
+            self.s_custom_theme_text_color.setVisible(False)
+            self.s_custom_theme_background_color.setVisible(False)
+        elif theme == 'Light':
             self.s_theme_list.setCurrentText(phrases['light'])
+            self.s_custom_theme_text_color.setVisible(False)
+            self.s_custom_theme_background_color.setVisible(False)
+        else:
+            self.s_theme_list.setCurrentText(phrases['custom theme'])
+            self.s_custom_theme_text_color.setVisible(True)
+            self.s_custom_theme_background_color.setVisible(True)
+
         self.s_tran_list.clear()
         # if phrases['translation name'] != tran_name:
         #     tran_name = phrases['translation name']
@@ -682,7 +743,7 @@ class Settings(QWidget):
         for t in trans:
             self.s_tran_list.addItem(t)
         self.s_tran_list.setCurrentText(tran_name)
-        print('update_interface: tran_name =', tran_name, phrases['translation name'])
+        print(f'update_interface: {tran_name = },', phrases['translation name'])
 
         if warn_before > 0:
             self.s_warn_gr.setChecked(True)
@@ -691,12 +752,31 @@ class Settings(QWidget):
             self.s_warn_gr.setChecked(False)
             self.s_warn.setValue(1)
 
+    def color_changes(self):
+        print(timer_theme)
+        print(self.s_theme_list.currentIndex())
+        if self.s_theme_list.currentIndex() == 2:
+            self.s_custom_theme_text_color.setVisible(True)
+            self.s_custom_theme_background_color.setVisible(True)
+        else:
+            self.s_custom_theme_text_color.setVisible(False)
+            self.s_custom_theme_background_color.setVisible(False)
+
     def showEvent(self, event):
         self.update_interface()
 
     def closeEvent(self, event):  # Если удалить - при закрытии будет завершаться приложение
         event.ignore()
         self.hide()
+
+    def hideEvent(self, event):
+        print('sett hide event')
+        global timer_theme, theme
+        print(theme, timer_theme, prev_timer_theme)
+        if timer_theme != prev_timer_theme or theme != prev_theme:
+            timer_theme = prev_timer_theme.copy()
+            theme = prev_theme
+            print('timer_theme changed')
 
 
 class Block(QWidget):
@@ -1173,7 +1253,31 @@ def add_clip():
 
 
 def notif(title, msg, sec=2):
-    window.tray_icon.showMessage(str(title), str(msg), app_icon, sec * 1000)
+    try:
+        window.tray_icon.showMessage(str(title), str(msg), app_icon, sec * 1000)
+    except Exception as exc:
+        print('Error in notif(): ', exc)
+        ThTimer(1, notif, args=(title, msg, sec))
+
+
+def set_text_color():
+    global timer_theme, theme
+    print('before:', prev_timer_theme, default_timer_theme)
+    color = QColorDialog().getColor().name()
+    timer_theme['text_color'] = color
+    print(color)
+    theme = 'Custom'
+    print('after:', prev_timer_theme, default_timer_theme)
+
+
+def set_background_color():
+    global timer_theme, theme
+    print('before:', prev_timer_theme, default_timer_theme)
+    color = QColorDialog().getColor().name()
+    timer_theme['base_color'] = color
+    print(color)
+    theme = 'Custom'
+    print('after:', prev_timer_theme, default_timer_theme)
 
 
 def notifications():
@@ -1212,17 +1316,12 @@ def notifications():
 def sett_upd():
     global sett
     print('sett_upd', sett)
-    sett = {'one_sess': one_sess,
-            'eye_save_type': eye_save_type,
-            'eye_save_time': eye_save_time,
-            'eye_save_time_end': str(eye_save_time_end),
-            'eye_save_enabled': eye_save_enabled,
-            'limited': limited,
-            'limit': limit,
-            'lim_off_type': lim_off_type,
-            'theme': theme,
-            'warn_before': warn_before,
-            'tran_name': tran_name}
+    sett = {}
+    for key in default_sett.keys():
+        if key == 'eye_save_time_end':
+            sett[key] = str(globals()[key])
+        else:
+            sett[key] = globals()[key]
     print('sett2:', sett)
 
 
@@ -1248,8 +1347,9 @@ def limit_out():
         popen(f'shutdown -t 100 -s -c "{phrases["needs monitor rest"]}"')
     elif lim_off_type == 1:
         log('hiber')
-        QTimer.singleShot(5000, hiber)
         notif(phrases['hiber'], phrases["needs monitor rest"])
+        sleep(5)
+        hiber()
     elif lim_off_type == 2:
         log('restart')
         popen(f'shutdown -t 10 -r -c "{phrases["needs monitor rest"]}"')
@@ -1285,7 +1385,7 @@ def eye_save():
         popen(f'shutdown -t 10 -s -c {phrases["needs monitor rest"]}')
     elif eye_save_type == 1:
         log('hiber')
-        QTimer.singleShot(5000, hiber)
+        ThTimer(5, hiber)
         notif(phrases['hiber'], phrases["needs monitor rest"])
     elif eye_save_type == 2:
         log('restart')
@@ -1381,28 +1481,29 @@ def dataload():
 
     def readsett():
         global one_sess, eye_save_type, eye_save_time, eye_save_time_end, sett, sid, eye_save_enabled, limited, limit, \
-            lim_off_type, theme, warn_before, tran_name
-        # sid = 0
+            lim_off_type, theme, warn_before, tran_name, timer_theme, prev_timer_theme, prev_theme
         try:
             print(listdir())
-            with open('sett.slset', 'r') as file:  # Настройки
-                sett = dict(json.load(file))
-                one_sess = sett['one_sess']
-                eye_save_type = sett['eye_save_type']
-                eye_save_time = sett['eye_save_time']
-                eye_save_time_end = datetime.datetime.strptime(sett['eye_save_time_end'], '%Y-%m-%d %H:%M:%S')
-                eye_save_enabled = sett['eye_save_enabled']
-                limited = sett['limited']
-                limit = sett['limit']
-                lim_off_type = sett['lim_off_type']
-                theme = sett['theme']
-                warn_before = sett['warn_before']
-                tran_name = sett['tran_name']
-                print('sett:', sett)
+            with open(sett_path, 'r') as file:  # Настройки
+                sett1 = dict(json.load(file))
+                for k, v in sett1.items():
+                    if k in default_sett.keys():
+                        if k == 'eye_save_time_end':
+                            globals()[k] = datetime.datetime.strptime(v, '%Y-%m-%d %H:%M:%S')
+                        elif k == 'timer_theme':
+                            prev_timer_theme = dict(v).copy()
+                            timer_theme = prev_timer_theme.copy()
+                            print('tttttttttttt', prev_timer_theme is timer_theme)
+                        elif k == 'theme':
+                            theme = v
+                            prev_theme = v
+                        else:
+                            globals()[k] = v
+                print(f'{sett1 = }')
         except Exception as exc1:
             # try:
             print('Failed to read settings because', exc1, ' trying to read as old settings', getcwd())
-            with open('sett.slset', 'r') as file:
+            with open(sett_path, 'r') as file:
                 sett_l = list(csv.reader(file, delimiter=','))[0]
                 one_sess = int(sett_l[0])
                 eye_save_type = int(sett_l[1])
@@ -1586,7 +1687,7 @@ def make_file(type_f='stat'):
         print(f'{sett = }')
         sett_upd()
         print('sett_updated')
-        with open('sett.slset', 'w') as file:
+        with open(sett_path, 'w') as file:
             json.dump(sett, file, ensure_ascii=False)
         print('wrote', sett, '\nglobals:', globals())
 
@@ -1596,7 +1697,7 @@ def datasave():
     # last_stat_upd()
     sett_upd()
     print('sett1')
-    with open('sett.slset', 'w') as file:  # Настройки
+    with open(sett_path, 'w') as file:  # Настройки
         print('opened')
         json.dump(sett, file, ensure_ascii=False)
     print('sett2')
@@ -1670,11 +1771,15 @@ def lib_import():
 if __name__ == '__main__':
     lib_import()
     dataload()
+
     app = QApplication(argv)
     app_icon = QIcon('icon.ico')
     app.setWindowIcon(app_icon)
     QFontDatabase.addApplicationFont('Segoe UI.ttf')
+    app.setApplicationDisplayName(phrases['app name'])
+    app.setApplicationName(phrases['app name'])
     font = QFont('Segoe UI', 30)
+
     pre_start()
     window = Timer()
     notifications()
