@@ -11,13 +11,10 @@ This is not parental control, it's self-control time tracker.
 ## 1.2.6
 
 ### Changes
- - Added "translation chooser" when the program start for the first time
- - Moved from PySide6 to PyQt5 for better themes on linux
- - Multiple files
- - Added "About Qt" button
- - Added theme changer for timer and interface
- - Added official English translation
- - Compilation is not required
+ - Added information in tray
+ - Added color chaning feature
+ - Fixed hibernation on linux
+ - It can be hidden on boot (setting)
 
 ## How to use?
 ### Install python packages
