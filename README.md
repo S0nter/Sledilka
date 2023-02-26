@@ -15,6 +15,8 @@ This is not parental control, it's self-control time tracker.
  - Added color chaning feature
  - Fixed hibernation on linux
  - It can be hidden on boot (setting)
+ - Fixed "Time limit" width
+ - Backend of saving settings improved (now the same names for shutting down should work)
 
 ## How to use?
 ### Install python packages
