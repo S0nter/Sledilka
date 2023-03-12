@@ -1,5 +1,5 @@
 from sys import platform
-from os import popen
+from base_functions import run
 if platform == 'win32':
     from ctypes import windll
 
@@ -9,11 +9,25 @@ def lock_comp():
         user = windll.LoadLibrary('user32.dll')
         user.LockWorkStation()
     elif platform == 'linux':
-        popen('loginctl lock-session')
+        run('loginctl lock-session')
 
 
 def hiber():
     if platform == 'win32':
-        print(popen('shutdown -h').read())
+        run('shutdown -h')
     elif platform == 'linux':
-        print(popen('loginctl hibernate').read())
+        run('loginctl hibernate')
+
+
+def shutdown(phrases):
+    if platform == 'win32':
+        run(f'shutdown -t 10 -s -c {phrases["needs rest from the monitor"]}')
+    elif platform == 'linux':
+        run('loginctl poweroff')
+
+
+def reboot(phrases):
+    if platform == 'win32':
+        run(f'shutdown -t 10 -r -c {phrases["needs rest from the monitor"]}')
+    elif platform == 'linux':
+        run('loginctl reboot')

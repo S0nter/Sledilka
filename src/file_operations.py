@@ -18,7 +18,7 @@ def add_to_startup(phrases: dict) -> None:
             file = open(f'{user}/.config/autostart/Sledilka.desktop', 'w')
             file.write(f"""[Desktop Entry]
 Type=Application
-Exec=cd {getcwd()} && {run}
+Exec=sleep 5 && cd {getcwd()} && {run}
 Path={getcwd()}
 Icon={getcwd()}/icon.ico
 StartupNotify=true

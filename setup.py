@@ -5,7 +5,7 @@ datafiles = [('',
              ('Translations',
               ['src/Translations/English.sltr', 'src/Translations/Русский.sltr'])]
 setup(name="Sledilka",
-      version='1.2.6',
+      version='1.2.7',
       data_files=datafiles,
       install_requires=['setuptools',
                         'activewindow',

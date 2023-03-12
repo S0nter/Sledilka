@@ -1,14 +1,11 @@
-import os
 import csv
 import datetime
+import os
 import shutil
+# import sys
 from threading import Thread, Timer as ThTimer
 from time import sleep
-
-from base_functions import *
-from file_operations import *
-from limit_operations import *
-from paths import *
+from sys import executable
 
 ##  QT5  ##
 from PyQt5.QtCore import QSize, Qt, QTimer
@@ -16,6 +13,13 @@ from PyQt5.QtGui import QPainter, QIcon, QFont, QColor, QFontDatabase, QStandard
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
     QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
     QDialog, QLineEdit, QScrollArea, QStyleFactory, QAction, QListView, QStyle, QCheckBox, QColorDialog
+from activewindow import WindowType
+
+from base_functions import *
+from file_operations import *
+from limit_operations import *
+from paths import *
+
 ###########
 
 QT_VERSION: int = 5
@@ -32,7 +36,7 @@ stat_sids = {str(datetime.date.today()): 0}
 warn_before = 0  # Показ уведомления, когда остаётся warn_before минут до чего-либо (0 - отключено)
 
 pros = []  # Время по дням, сколько было просижено в каждый день
-vozm = []  # Сколько можно было вообще просидеть
+poss = []  # Сколько можно было вообще просидеть
 num_days = {}  # №date: date
 
 one_sess = 0  # Длительность сессии (до выключения, минут) (если ноль - отключено)
@@ -41,6 +45,7 @@ eye_save_time = 1  # Длительность отдыха от монитора
 eye_save_time_end = datetime.datetime.now().replace(microsecond=0)  # Конец отдыха от монитора
 eye_save_enabled = False
 blocked = False
+lock_apps = ['LockApp.exe', 'LockScr', WindowType.LockedScreen]
 start = datetime.date.today()
 today = datetime.date.today()
 delta_t = start - today
@@ -59,9 +64,9 @@ phrases = {
     'block title': 'Следилка - Блокировщик ТЕБЯ',
     'add time': 'Добавить',
     'minutes': ' мин.',
-    'needs monitor rest': 'Требуется отдых от монитора',
-    'need monitor rest for': 'Требовать отдыха от монитора на',
-    'monitor rest': 'Отдых от монитора',
+    'needs rest from the monitor': 'Требуется отдых от монитора',
+    'need rest from the monitor for': 'Требовать отдыха от монитора на',
+    'rest from the monitor': 'Отдых от монитора',
     'limit': 'Лимит времени',
     'your time is over': 'Ваше время истекло',
     'limit will be over soon': 'Лимит времени скоро закончится',
@@ -83,6 +88,7 @@ phrases = {
     'copy': 'Копировать',
     'statistic': 'Статистика',
     'settings': 'Настройки',
+    'advanced settings': 'Расширенные настройки',
     'show': 'Показать',
     'hide': 'Скрыть',
     'ok': 'OK',
@@ -335,10 +341,12 @@ class Timer(QWidget):
         self.checker_timer.start()
 
     def checker(self):
-        global sid, sid_sess, eye_save_time_end, start, saved, stat, thisapp, wintitle
+        global sid, sid_sess, eye_save_time_end, start, saved, stat, thisapp, wintitle, today
         # try:
         s = datetime.datetime.now()  # noqa
-        if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
+        if today != datetime.date.today():
+            today = datetime.date.today()
+        if thisapp not in lock_apps and not blocked and not lim_activated:
             saved = False
             if self.isHidden() and not self.in_tray:
                 print('restored from tray: checker', hidden_startup)
@@ -358,17 +366,22 @@ class Timer(QWidget):
                     datetime.timedelta(minutes=eye_save_time)
                 Thread(target=datasave).start()
                 eye_save()
-            elif sid_sess > one_sess * 60:
-                sid_sess = 0
-            if limited and (sid >= limit * 60 or sid >= vozm[num_days[datetime.date.today()]] * 60):
-                print(limited, sid >= limit * 60, sid >= vozm[num_days[datetime.date.today()]] * 60)
-                limit_out()
-                print('liiiiiimit')
+            # elif sid_sess > one_sess * 60:
+            #     log('sideeed')
+            #     sid_sess = 0
+            try:
+                if limited and (sid >= limit * 60 or sid >= poss[num_days[datetime.date.today()]] * 60):
+                    print(limited, sid >= limit * 60, sid >= poss[num_days[datetime.date.today()]] * 60, f'\n{poss = }',
+                          f'\n{num_days = }', f'\n{datetime.date.today()}')
+                    print('liiiiiimit')
+                    limit_out()
+            except KeyError:
+                set_all_sids()
         elif blocked or lim_activated:
             if not self.in_tray:
                 self.hide()
                 self.in_tray = True
-        elif not saved and thisapp not in ['LockApp.exe', 'LockScr']:
+        elif not saved and thisapp not in lock_apps:
             Thread(target=datasave).start()
             saved = True
         if datetime.date.today() != start:
@@ -380,7 +393,7 @@ class Timer(QWidget):
                 set_all_sids()
         if warn_before != 0 and eye_save_enabled and sid_sess + warn_before * 60 == one_sess * 60:
             # сек + мин * 60 == мин * 60
-            notif(phrases['monitor rest'], phrases['session will be over soon'])
+            notif(phrases['rest from the monitor'], phrases['session will be over soon'])
             print('NOOOOOOOOOOOOOOTIFED1', sid_sess, warn_before, one_sess)
         elif warn_before != 0 and limited and limit * 60 == sid + warn_before * 60:  # мин * 60 == сек + мин * 60
             notif(phrases['limit'], phrases['limit will be over soon'])
@@ -392,7 +405,7 @@ class Timer(QWidget):
     def runtimesec(self):
         global sid, sid_sess
         # print(f'{thisapp = }, {blocked = }')
-        if thisapp not in ['LockApp.exe', 'LockScr'] and not blocked and not lim_activated:
+        if thisapp not in lock_apps and not blocked and not lim_activated:
             self.time_show.setText(str(datetime.timedelta(seconds=sid)))
             self.tray_icon.setToolTip(f"{phrases['time for today']}{datetime.timedelta(seconds=sid)}"
                                       f"{phrases['session is running for:']}{datetime.timedelta(seconds=sid_sess)}")
@@ -404,6 +417,11 @@ class Timer(QWidget):
         print('show_block')
         if (blocked and sid_sess >= one_sess * 60 and eye_save_enabled) or \
                 (lim_activated and limited and sid >= limit * 60):
+            if not lim_activated:
+                self.b_timer.setText(str(
+                    datetime.timedelta(seconds=int((eye_save_time_end - datetime.datetime.now()).total_seconds()))))
+            else:
+                self.b_timer.setText('')
             if not self.blk.isActiveWindow():
                 self.blk.up()
 
@@ -411,7 +429,7 @@ class Timer(QWidget):
 class Settings(QWidget):
     def __init__(self):
         super().__init__()
-        self.s_eye_rest_label = QLabel(phrases['need monitor rest for'])
+        self.s_eye_rest_label = QLabel(phrases['need rest from the monitor for'])
         log('Settings __init__')
         self.setWindowTitle(phrases['settings'])
         self.setWindowIcon(app_icon)
@@ -439,7 +457,7 @@ class Settings(QWidget):
 
     def _set_eye_save(self):
         self.s_one_sess_gr = QGroupBox()  # Отдых от монитора:
-        self.s_one_sess_gr.setTitle(phrases['monitor rest'])
+        self.s_one_sess_gr.setTitle(phrases['rest from the monitor'])
         self.s_one_sess_gr.setCheckable(True)
 
         self.s_eye_sess = QLabel()
@@ -623,11 +641,15 @@ class Settings(QWidget):
     def _set_buttons(self):
         self.btnlay = QHBoxLayout()  # Перевод
 
-        self.s_tran_bt = QPushButton()
+        self.s_tran_bt = QPushButton(phrases['translations'])
         self.s_tran_bt.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.s_tran_bt.setText(phrases['translations'])
         self.s_tran_bt.clicked.connect(self.translator.show)  # noqa
         self.btnlay.addWidget(self.s_tran_bt)
+
+        self.adv_butt = QPushButton(phrases['advanced settings'])
+        self.adv_butt.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.adv_butt.clicked.connect(self.advanced.show)  # noqa
+        self.btnlay.addWidget(self.adv_butt)
 
         self.about = QPushButton('About Qt')
         self.about.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -707,7 +729,8 @@ class Settings(QWidget):
 
         if changed:
             sid += 2
-            window = Timer()
+            # window = Timer()
+            restart(sid_sess)
 
     def update_interface(self):
         global tran_name
@@ -797,7 +820,7 @@ class Block(QWidget):
         self.label = QLabel()
         self.label.setStyleSheet("color: red;")
         if not lim_activated:
-            self.label.setText(phrases['monitor rest'])
+            self.label.setText(phrases['rest from the monitor'])
         else:
             self.label.setText(phrases['your time is over'])
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -911,7 +934,7 @@ class Statistic(QWidget):
             # for key in full_stat[i]:
             #     text = QLabel()
             #     # print('eeeeeeee',key, full_stat[i][key])
-            #     if full_stat[i][key] != 0 and key not in ['LockApp.exe', 'LockScr']:
+            #     if full_stat[i][key] != 0 and key not in lock_apps:
             #         text.setText(self.stat_l.text() +
             #                         f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=full_stat[i][key])}\n')
             self.make_tab(sort(full_stat[i]), i)
@@ -923,7 +946,7 @@ class Statistic(QWidget):
         text.setAlignment(Qt.AlignmentFlag.AlignLeft)
         summ = 0
         for key in d:
-            if d[key] != 0 and key not in ['LockApp.exe', 'LockScr']:
+            if d[key] != 0 and key not in lock_apps:
                 text.setText(text.text() +
                              f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=d[key])}\n')
                 summ += d[key]
@@ -935,7 +958,7 @@ class Statistic(QWidget):
         try:
             self.stat_l.setText(f"{phrases['today']}:\n")
             for key in sort(stat):
-                if stat[key] != 0 and key not in ['LockApp.exe', 'LockScr']:
+                if stat[key] != 0 and key not in lock_apps:
                     self.stat_l.setText(self.stat_l.text() +
                                         f'{key.replace(".exe", "")} - {datetime.timedelta(seconds=stat[key])}\n')
             self.stat_l.setText(self.stat_l.text() + f"\n{phrases['total:']} {datetime.timedelta(seconds=sid)}")
@@ -1074,7 +1097,8 @@ class Translator(QWidget):
             phrases = translation
             transave(phrases, tran_name, tran_path)
             datasave()
-            window = Timer()
+            # window = Timer()
+            restart(sid_sess)
         else:
             print('translation did not changed or something')
 
@@ -1121,14 +1145,16 @@ class Startup(QWidget):
         global window
         event.ignore()
         self.hide()
-        window = Timer()
-        window.show()
+        # window = Timer()
+        # window.show()
+        restart(sid_sess)
 
 
 class AdvancedSettings(QWidget):
     def __init__(self):
         super().__init__()
         log('AdvancedSettings __init__')
+        self.setWindowTitle(phrases['advanced settings'])
 
         self.layout = QVBoxLayout()
 
@@ -1154,45 +1180,33 @@ def startwin(mode: int = 2):  # mode: 1 or 2
         from multiprocessing.managers import SharedMemoryManager
         with SharedMemoryManager() as smm:
             shared = smm.ShareableList(['a' * 70])
-            p = Thread(target=thiswin, args=(shared,))  # , name='anyyyyyyyy', daemon=True
+            p = Thread(target=thiswin, args=(shared,))
             p.start()
-            # alive = p.is_alive()
-            # freeze_support()
             while True:
                 try:
                     while True:
-                        # try:
                         if shared != smm.ShareableList(['a' * 70]) and shared[0] != 'a' * 70:
                             thisapp = shared[0]
-                            # wintitle = shared[1]
-                        # except Exception as exc:
-                        #     print(exc)
-
                         if not p.is_alive():
-                            print("thiswin isn't alive")
                             shared = smm.ShareableList(['a' * 70])
                             p = Thread(target=thiswin, args=(shared,))
-                            p.start()  # , name='anyyyyyyyy', daemon=True
-                            print('runned')
+                            p.start()
                         sleep(0.5)
                 except ConnectionRefusedError as exc:
                     print(exc)
-                    # p.terminate()
     else:
         ##### Second variant #####
         while True:
             try:
-                # s = datetime.datetime.now()
                 thisapp = thiswin()
-                # e = datetime.datetime.now()
-                # print('Got app name in', (e - s).total_seconds(), 'seconds')
                 sleep(0.7)
             except Exception as exc:
-                print('Exception from "thiswin()":', exc)
+                print('Exception from "thiswin()": ', exc)
 
 
 def thiswin(shared=None) -> str:
     def smaller(s: str) -> str:
+        s = str(s)
         return s[0:49] if len(s) > 50 else s
 
     from activewindow import getAppName  # , getTitle
@@ -1212,8 +1226,15 @@ def thiswin(shared=None) -> str:
 
 
 def pre_start():
-    global today, delta_t, start, eye_save_time_end
+    global today, delta_t, start, eye_save_time_end, sid_sess, sid
     log('pre_start')
+    try:
+        sid_sess = abs(int(argv[1]))
+        if sid_sess > sid:
+            sid = sid_sess
+    except Exception as exc:
+        print('sid_sess failed:', exc)
+
     print(f'до конца отдыха от мон: {(eye_save_time_end - datetime.datetime.now()).total_seconds()}')
     print(f'{sett["eye_save_time"] = }\n'
           f'{str(sett["eye_save_time_end"]) = }\n'
@@ -1257,7 +1278,7 @@ def notif(title, msg, sec=2):
         window.tray_icon.showMessage(str(title), str(msg), app_icon, sec * 1000)
     except Exception as exc:
         print('Error in notif(): ', exc)
-        ThTimer(1, notif, args=(title, msg, sec))
+        ThTimer(1, notif, args=(title, msg, sec)).start()
 
 
 def set_text_color():
@@ -1327,35 +1348,62 @@ def sett_upd():
 
 def limit_out():
     log('limit_out')
-    global eye_save_time, eye_save_time_end, lim_activated
+    global eye_save_time, eye_save_time_end, lim_activated, today
     print(eye_save_time_end, eye_save_time)
-    print(f'{sid = }, возможно: {vozm[num_days[datetime.date.today()]]}')
+    print(f'{sid = }, возможно: {poss[num_days[datetime.date.today()]]}')
+    datasave()
 
     def locker():
         global lim_activated
-        log('locker')
-        if lim_activated and limited and (sid > limit * 60 or sid >= vozm[num_days[datetime.date.today()]]):
+        log('limit_out - locker')
+        if lim_activated and limited and (sid > limit * 60 or sid >= poss[num_days[datetime.date.today()]]):
             lock_comp()
-            QTimer.singleShot(1000, locker)
+            ThTimer(1, locker).start()
         else:
             print('locker lim_activated - false')
             lim_activated = False
 
+    def hibernator():
+        # global lim_activated, today
+        log('limit_out - hibernator')
+        if lim_activated and limited and (sid > limit * 60 or sid >= poss[num_days[datetime.date.today()]]):
+            print('hiber', f'{today = }', f'{datetime.date.today() = }\n\n\n\n')
+            hiber()
+            sleep(1)
+            restart()
+
+        # try:
+        #     if lim_activated and limited and (sid > limit * 60 or sid >= poss[num_days[datetime.date.today()]]):
+        #         # and \
+        #         # datetime.date.today() == today:
+        #         # hiber()
+        #         print('hiber', datetime.date.today())
+        #         ThTimer(2, hibernator).start()
+        #     else:
+        #         print('hibernator blocked - false')
+        #         today = datetime.date.today()
+        #         # set_all_sids()
+        #         lim_activated = False
+        #
+        # except Exception as exc:
+        #     print('hibernator Exception:', exc)
+        #     lim_activated = False
+        #     today = datetime.date.today()
+
     lim_activated = True
     if lim_off_type == 0:
         log('sutdown')
-        popen(f'shutdown -t 100 -s -c "{phrases["needs monitor rest"]}"')
+        shutdown(phrases)
     elif lim_off_type == 1:
         log('hiber')
-        notif(phrases['hiber'], phrases["needs monitor rest"])
-        sleep(5)
-        hiber()
+        ThTimer(5, hibernator).start()
+        notif(phrases['hiber'], phrases["needs rest from the monitor"])
     elif lim_off_type == 2:
-        log('restart')
-        popen(f'shutdown -t 10 -r -c "{phrases["needs monitor rest"]}"')
+        log('reboot')
+        reboot(phrases)
     elif lim_off_type == 3:
         log('block')
-        QTimer.singleShot(1, block_s)
+        ThTimer(0.01, block_s).start()
     elif lim_off_type == 4:
         log('lock_scr')
         locker()
@@ -1368,31 +1416,46 @@ def eye_save():
     log('eye_save')
     print(blocked)
     print(eye_save_time_end, eye_save_time, eye_save_type)
+    datasave()
 
     def locker():
         global blocked
-        log('locker')
-        if blocked and (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0:
+        log('eye_save - locker')
+        if blocked and eye_save_enabled and (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0:
             lock_comp()
-            QTimer.singleShot(100, locker)
+            ThTimer(0.1, locker).start()
         else:
             print('locker blocked - false')
+            set_all_sids()
             blocked = False
+
+    def hibernator():
+        global blocked
+        log('eye_save - hibernator')
+        if blocked and eye_save_enabled and (eye_save_time_end - datetime.datetime.now()).total_seconds() > 0:
+            print('hiber - eye_save', f'{today = }', f'{datetime.date.today() = }\n\n\n\n')
+            hiber()
+            sleep(1)
+            restart()
+            # ThTimer(2, hibernator).start()
+        # else:
+        #     print('hibernator blocked - false')
+        #     blocked = False
 
     blocked = True
     if eye_save_type == 0:
         log('sutdown')
-        popen(f'shutdown -t 10 -s -c {phrases["needs monitor rest"]}')
+        shutdown(phrases)
     elif eye_save_type == 1:
         log('hiber')
-        ThTimer(5, hiber)
-        notif(phrases['hiber'], phrases["needs monitor rest"])
+        ThTimer(5, hibernator).start()
+        notif(phrases['hiber'], phrases["needs rest from the monitor"])
     elif eye_save_type == 2:
-        log('restart')
-        popen(f'shutdown -t 10 -r -c {phrases["needs monitor rest"]}')
+        log('reboot')
+        reboot(phrases)
     elif eye_save_type == 3:
         log('block')
-        QTimer.singleShot(1, block_s)
+        ThTimer(0.01, block_s).start()
     elif eye_save_type == 4:
         log('lock_scr')
         locker()
@@ -1407,12 +1470,18 @@ def set_all_sids():
     days = []
     for day in full_stat:  # добавляем даты
         days.append(datetime.datetime.strptime(day, '%Y-%m-%d').date())
-    days.append(datetime.date.today())  # добавляем сегодня
+    if datetime.date.today() not in days:
+        days.append(datetime.date.today())  # добавляем сегодня
     num_sid = {}
     num_days = {}
     min_day = min(days)
     for day in days:
-        num_sid[(day - min_day).days] = stat_sids[str(day)]
+        try:
+            num_sid[(day - min_day).days] = stat_sids[str(day)]
+        except KeyError:
+            stat_sids[str(day)] = 0
+        finally:
+            num_sid[(day - min_day).days] = stat_sids[str(day)]
         num_days[day] = (day - min_day).days
         print('to num_sid added', (day - min_day).days, day)
     print(f'{num_sid = }')
@@ -1420,13 +1489,13 @@ def set_all_sids():
     print(f'{days = }')
     for day_ in num_sid:
         add_time(day_, num_sid[day_] // 60)
-    skok_vozm()
+    skok_poss()
     for e in range(len(pros)):
-        print(f'{e} {pros[e]} {vozm[e]}')
-    print(f'vozm: {json.dumps(dict(enumerate(vozm)), indent=4)}')
-    # print(f'{pros = }\n{vozm = }')
+        print(f'{e} {pros[e]} {poss[e]}')
+    print(f'poss: {json.dumps(dict(enumerate(poss)), indent=4)}')
+    # print(f'{pros = }\n{poss = }')
     # print(get_key(num_sid, str(datetime.date.today())), '\n\n\n')
-    # print(vozm[get_key(num_sid, str(datetime.date.today()))], '\n\n\n')
+    # print(poss[get_key(num_sid, str(datetime.date.today()))], '\n\n\n')
     print('setted all sids in', (datetime.datetime.now() - s).total_seconds(), 'sec\n')
 
 
@@ -1443,33 +1512,33 @@ def add_time(day, mins):
         pros.insert(day, mins)
 
 
-def skok_vozm():
-    global vozm
-    vozm = []
+def skok_poss():
+    global poss
+    poss = []
     for a in range(len(pros) + 1):
-        vozm.append(limit)
+        poss.append(limit)
     for i in range(len(pros)):
-        if pros[i] > vozm[i]:  # Если просижено больше, чем можно, то
-            vozm[i + 1] -= pros[i] - vozm[i]  # На следующий день отнимается перебор
+        if pros[i] > poss[i]:  # Если просижено больше, чем можно, то
+            poss[i + 1] -= pros[i] - poss[i]  # На следующий день отнимается перебор
     # i = 0
-    # while vozm[-1] >= 0:
-    #     if vozm[i] < 0:
-    #         vozm[i+1] += vozm[i]
-    #         vozm[i] = 0
+    # while poss[-1] >= 0:
+    #     if poss[i] < 0:
+    #         poss[i+1] += poss[i]
+    #         poss[i] = 0
     #     i += 1
-    for i in range(len(vozm)):
-        if vozm[i] < 0 and vozm.index(vozm[-1]) == vozm.index(vozm[i]):  # Если текущий элемент отр и он последний то:
-            while not vozm[-1] >= 0:  # Пока последний элемент меньше нуля:
-                vozm.append(limit)
-                vozm[-1] += vozm[-2]
-                vozm[-2] = 0
-        elif vozm[i] < 0 and vozm.index(vozm[-1]) != vozm.index(vozm[i]):
-            vozm[i + 1] += vozm[i]
-            vozm[i] = 0
-    # for e in vozm:
+    for i in range(len(poss)):
+        if poss[i] < 0 and poss.index(poss[-1]) == poss.index(poss[i]):  # Если текущий элемент отр и он последний то:
+            while not poss[-1] >= 0:  # Пока последний элемент меньше нуля:
+                poss.append(limit)
+                poss[-1] += poss[-2]
+                poss[-2] = 0
+        elif poss[i] < 0 and poss.index(poss[-1]) != poss.index(poss[i]):
+            poss[i + 1] += poss[i]
+            poss[i] = 0
+    # for e in poss:
     #     if e < 0:
-    #         print('in skok_vozm() element < 0')
-    #         skok_vozm()
+    #         print('in skok_poss() element < 0')
+    #         skok_poss()
     #         break
 
 
@@ -1574,14 +1643,8 @@ def dataload():
     log('stat')
     try:
         readstat()
-    except FileNotFoundError:
-        log('except FileNotFoundError:')
-        make_file('stat')
-    except ValueError:
-        log('ValueError')
-        make_file('stat')
-    except IndexError:
-        log('IndexError')
+    except Exception as exc:
+        log('Exception:', exc)
         make_file('stat')
     finally:
         readstat()
@@ -1645,7 +1708,7 @@ def gettran(name: str):  # Устанавливает словарь перев�
 
     def get():
         global phrases, tran_name
-        print('aaaaaaaaaaaaaaa', tran_name, phrases)
+        # print('aaaaaaaaaaaaaaa', tran_name, phrases)
         with open(f'{name}.sltr', 'r') as file:
             phrases1 = dict(json.load(file))
             for k in phrases1.keys():
@@ -1768,7 +1831,32 @@ def lib_import():
     print(listdir())
 
 
+def new_day():
+    global today
+    today = datetime.date.today()
+
+
+def restart(sid_sess_: int = 0):
+    datasave()
+    try:
+        print('error:', executable)
+        # os.execv(executable, [executable, __file__, str(sid_sess_)])
+        # run(f'{executable} {__file__} {str(sid_sess_)}')
+        # sys.exit(0)
+        print('2nd error:')
+        # exec(argv[0], {'sid_sess': sid_sess_})
+        # os.execl(executable, f'{__file__} {str(sid_sess_)}')  # works if not compiled
+        os.execl(executable, executable, argv[0], str(sid_sess_))  # works if not compiled
+
+        print('not')
+    except Exception as exc:
+        print(exc)
+        os.execv(argv[0], argv + [str(sid_sess_)])  # works if compiled
+        print('worked if compiled')
+
+
 if __name__ == '__main__':
+    print('aaaaaaaaaaaaaaaaaa', argv)
     lib_import()
     dataload()
 
@@ -1783,4 +1871,5 @@ if __name__ == '__main__':
     pre_start()
     window = Timer()
     notifications()
+    # input(argv)
     app.exec()
