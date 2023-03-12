@@ -1,6 +1,6 @@
 pkgname="Sledilka"
-pkgver="1.2.6"
-pkgrel="1"
+pkgver="1.2.7"
+pkgrel="2"
 pkgdesc="Self-control program written with PyQt"
 arch=("x86_64")
 depends=("python-pyqt5-sip" "python-pyqt5" "python3" "git")
