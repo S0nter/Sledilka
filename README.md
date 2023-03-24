@@ -26,7 +26,7 @@ pip install nuitka zstandard ordered-set
 ```
 For program:
 ```
-pip install PyQt5 activewindow darkdetect
+pip install PyQt5 activewindow
 ```
 For Windows also install these packages: ```pywin32 winshell```
 
