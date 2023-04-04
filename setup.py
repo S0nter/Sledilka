@@ -1,7 +1,7 @@
 from setuptools import setup
 
 datafiles = [('',
-              ['src/Segoe UI.ttf', 'src/icon.ico', 'src/Sledilka.py', 'src/limit_operations.py', 'src/base_functions.py', 'src/file_operations.py']),
+              ['src/Segoe UI.ttf', 'src/icon.ico', 'src/Sledilka.py', 'src/limit_operations.py', 'src/base_functions.py', 'src/file_operations.py', 'src/paths.py']),
              ('Translations',
               ['src/Translations/English.sltr', 'src/Translations/Русский.sltr'])]
 setup(name="Sledilka",
