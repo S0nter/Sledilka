@@ -8,15 +8,13 @@ This is not parental control, it's self-control time tracker.
 ## Gallery
 ![Sledilka](/gallery/Interface.png)
 
-## 1.2.6
+## 1.2.8
 
 ### Changes
- - Added information in tray
- - Added color chaning feature
- - Fixed hibernation on linux
- - It can be hidden on boot (setting)
- - Fixed "Time limit" width
- - Backend of saving settings improved (now the same names for shutting down should work)
+ - Using loguru instead of prints
+ - Fixed translations and english placeholder
+ - Fixed bug with translations after compilation (fixed restart function)
+ - Fixed startup notifications
 
 ## How to use?
 ### Install python packages
