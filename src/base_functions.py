@@ -1,11 +1,25 @@
+from pprint import pformat
 from paths import log_path
 from os import popen
+from loguru import logger
+
+logger.add(log_path, level='DEBUG', rotation='10 MB')  # format="{time} | {level} |  | {message}",
 
 
-def log(*text, sep=' ', end='\n'):
-    print(*text, sep=sep, end=end)
-    with open(log_path, 'a') as file:
-        print(*text, sep=sep, end=end, file=file)
+def log(*text):
+    # print(*text, sep=sep, end=end)
+    # with open(log_path, 'a') as file:
+    #     print(*text, sep=sep, end=end, file=file)
+    logger.info(normalise(text))
+
+
+def debug(*text):
+    # logger.debug(" ".join(map(str, json.dumps(text, ensure_ascii=False, indent=4))))
+    logger.debug(normalise(text))
+
+
+def error(*text):
+    logger.error(normalise(text))
 
 
 def to_bool(string: str) -> bool:
@@ -26,19 +40,18 @@ def sort(dict_):
 
 
 def run(command):
-    print(popen(command).read())
+    debug(popen(command).read())
 
-# def copytree(src, dst, symlinks=False, ignore=None):
-#     import os, shutil
-#     for item in os.listdir(src):
-#         s = os.path.join(src, item)
-#         d = os.path.join(dst, item)
-#         print(s, d)
-#         try:
-#             if os.path.isdir(s):
-#                 os.mkdir()
-#                 shutil.copytree(s, d, symlinks, ignore)
-#             else:
-#                 shutil.copy2(s, d)
-#         except shutil.SameFileError:
-#             pass
+
+def normalise(sth):
+    ls = []
+    for i in sth:
+        if type(i) in [dict, list, tuple]:
+            i = pformat(i, indent=4)
+        ls.append(str(i))
+    return " ".join(ls)
+
+
+# def is_iterable():
+#     try:
+
