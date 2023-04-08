@@ -15,6 +15,7 @@ This is not parental control, it's self-control time tracker.
  - Fixed translations and english placeholder
  - Fixed bug with translations after compilation (fixed restart function)
  - Fixed startup notifications
+ - Shutdown functions work on Linux
 
 ## How to use?
 ### Install python packages
