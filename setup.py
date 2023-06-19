@@ -18,5 +18,5 @@ setup(name="Sledilka",
                         "winshell;platform_system=='Windows'",
                         "winshell;platform_system=='win-amd64'",
                         'loguru'],
-      entry_points={'console_scripts': ['Sledilka = Sledilka']},
+      zip_safe=False
       )
