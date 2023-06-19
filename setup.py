@@ -6,7 +6,7 @@ datafiles = [('',
              ('Translations',
               ['src/Translations/English.sltr', 'src/Translations/Русский.sltr'])]
 setup(name="Sledilka",
-      version='1.2.8',
+      version='1.3',
       data_files=datafiles,
       install_requires=['setuptools',
                         'activewindow',
@@ -18,4 +18,5 @@ setup(name="Sledilka",
                         "winshell;platform_system=='Windows'",
                         "winshell;platform_system=='win-amd64'",
                         'loguru'],
-      zip_safe=False)
+      entry_points={'console_scripts': ['Sledilka = Sledilka']},
+      )

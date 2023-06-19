@@ -7,7 +7,7 @@ if platform == 'win32':
     from win32com.client import Dispatch  # noqa
 
 
-def add_to_startup(phrases: dict) -> None:
+def add_to_startup(desktop_file) -> None:
     try:
         if platform == 'win32':
             make_shortcut('Sledilka', path.abspath('Sledilka.exe'), 'startup')
@@ -16,27 +16,7 @@ def add_to_startup(phrases: dict) -> None:
             run = 'python3 ' + argv[0]
             # run = 'python3 -m Sledilka'
             file = open(f'{user}/.config/autostart/Sledilka.desktop', 'w')
-            file.write(f"""[Desktop Entry]
-Type=Application
-Exec=sleep 5 && cd {getcwd()} && {run}
-Path={getcwd()}
-Icon={getcwd()}/icon.ico
-StartupNotify=true
-Terminal=false
-TerminalOptions=
-X-DBUS-ServiceName=Sledilka
-X-DBUS-StartupType=Unique
-X-GNOME-Autostart-enabled=true
-X-KDE-SubstituteUID=false
-X-KDE-Username=
-Hidden=false
-NoDisplay=false
-Name[en_IN]=Sledilka
-Name[ru_RU]=Следилка
-Name={phrases["app name"]}
-Comment[en_IN]=
-Comment=
-""")
+            file.write(desktop_file)
             file.close()
             print('Home path (user):', path.expanduser('~'))
     except Exception as exc:

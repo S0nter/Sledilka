@@ -2,24 +2,23 @@ from pprint import pformat
 from paths import log_path
 from os import popen
 from loguru import logger
+from sys import stdout
 
-logger.add(log_path, level='DEBUG', rotation='10 MB')  # format="{time} | {level} |  | {message}",
+logger.remove(0)
+logger.add(log_path, level='DEBUG', rotation='10 MB', format='<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <5}</level> | <cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>')  # format="{time} | {level} |  | {message}",  # noqa
+logger.add(stdout, format='<level>{level: <5}</level> | <cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>')  # noqa
 
 
-def log(*text):
-    # print(*text, sep=sep, end=end)
-    # with open(log_path, 'a') as file:
-    #     print(*text, sep=sep, end=end, file=file)
-    logger.info(normalise(text))
+def log(*text, depth=1):
+    logger.opt(depth=depth).info(normalise(text))
 
 
 def debug(*text):
-    # logger.debug(" ".join(map(str, json.dumps(text, ensure_ascii=False, indent=4))))
-    logger.debug(normalise(text))
+    logger.opt(depth=1).debug(normalise(text))
 
 
 def error(*text):
-    logger.error(normalise(text))
+    logger.opt(depth=1, exception=True).error(normalise(text))
 
 
 def to_bool(string: str) -> bool:
@@ -52,6 +51,7 @@ def normalise(sth):
     return " ".join(ls)
 
 
-# def is_iterable():
-#     try:
-
+def is_between(time, time_range) -> bool:
+    if time_range[1] < time_range[0]:
+        return time >= time_range[0] or time <= time_range[1]
+    return time_range[0] <= time <= time_range[1]
