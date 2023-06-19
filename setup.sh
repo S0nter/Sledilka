@@ -7,5 +7,4 @@ else
     prefix=$1
 fi
 pip uninstall Sledilka
-python3 setup.py build sdist install --prefix=$prefix
-#.local/lib/python3.10
+python3 setup.py build sdist install --root=$prefix
