@@ -1,8 +1,12 @@
 from pprint import pformat
-from paths import log_path
 from os import popen
 from loguru import logger
 from sys import stdout
+
+try:
+    from paths import log_path
+except ImportError:
+    from .paths import log_path
 
 logger.remove(0)
 logger.add(log_path, level='DEBUG', rotation='10 MB', format='<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <5}</level> | <cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>')  # format="{time} | {level} |  | {message}",  # noqa

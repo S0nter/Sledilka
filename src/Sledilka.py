@@ -17,10 +17,16 @@ from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabe
 
 from activewindow import WindowType
 
-from base_functions import *
-from file_operations import *
-from limit_operations import *
-from paths import *
+try:
+    from base_functions import *
+    from file_operations import *
+    from limit_operations import *
+    from paths import *
+except ImportError:
+    from .base_functions import *
+    from .file_operations import *
+    from .limit_operations import *
+    from .paths import *
 
 ###########
 

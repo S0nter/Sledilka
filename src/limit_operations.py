@@ -1,5 +1,8 @@
 from sys import platform
-from base_functions import run
+try:
+    from base_functions import run
+except ImportError:
+    from .base_functions import run
 if platform == 'win32':
     from ctypes import windll
 
