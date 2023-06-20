@@ -8,4 +8,4 @@ else
 fi
 # pip uninstall Sledilka
 python3 setup.py build sdist
-python3 -m pip install dist/* --target=d:$prefix
+python3 -m pip install dist/* --target=$prefix
