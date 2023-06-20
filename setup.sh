@@ -1,9 +1,11 @@
 #!/bin/bash
 
-python3 setup.py build sdist
 
-if [ -z "$1" ];  then
-    python3 -m pip install dist/*
+if [ -z "$1" ]
+  then
+    prefix=$HOME/.local
 else
-    python3 -m pip install dist/* --prefix="$1"
-fi 
+    prefix=$1
+fi
+
+python3 setup.py build sdist install --prefix=$prefix
