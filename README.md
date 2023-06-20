@@ -8,14 +8,16 @@ This is not parental control, it's self-control time tracker.
 ## Gallery
 ![Sledilka](/gallery/Interface.png)
 
-## 1.2.8
+## 1.3
 
 ### Changes
- - Using loguru instead of prints
- - Fixed translations and english placeholder
- - Fixed bug with translations after compilation (fixed restart function)
- - Fixed startup notifications
- - Shutdown functions work on Linux
+ - Fixed loguru function path
+ - Added new option to control screen time: Blocked hours
+ - Wayland time tracking fix (requires dbus and kde/gnome/mint...)
+ - Wayland icon fix
+ - Removed whitespaces from various places in translations
+ - Fixed crash when caused by limits enabling
+ - Fixed color dialog (there is current color now)
 
 ## How to use?
 ### Install python packages
