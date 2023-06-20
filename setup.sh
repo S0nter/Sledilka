@@ -6,5 +6,6 @@ if [ -z "$1" ]
 else
     prefix=$1
 fi
-pip uninstall Sledilka
-python3 setup.py build sdist install --prefix=$prefix
+# pip uninstall Sledilka
+python3 setup.py build sdist
+python3 -m pip install dist/* --target=d:$prefix
