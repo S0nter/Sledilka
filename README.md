@@ -31,9 +31,15 @@ pip install PyQt5 activewindow importlib datetime loguru
 ```
 For Windows also install these packages: ```pywin32 winshell```
 
-You may compile it or use as python package (better):
+You may compile it or use as python package (better)
 
 ### 1) Compilation
+#### 1.1) Windows
+ - Click green `Code` button, then `Download ZIP`
+ - Unpack files to a dirirectory and it will be used by Sledilka
+ - Copy path to folder with Sledilka's files
+ - Press `Win + R` and enter `cmd`, press enter
+ - type `cd /D <path you've copied earlier>`
 Run this command:
 ```
 python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt5 --disable-console Sledilka.py
