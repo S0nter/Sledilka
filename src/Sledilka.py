@@ -8,12 +8,12 @@ from sys import executable
 from copy import deepcopy
 from subprocess import Popen, PIPE
 
-##  QT5  ##
-from PyQt5.QtCore import QSize, Qt, QTimer, QTime
-from PyQt5.QtGui import QPainter, QIcon, QFont, QColor, QFontDatabase, QStandardItem, QStandardItemModel  # , QAction
-from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
+##  QT6  ##
+from PyQt6.QtCore import QSize, Qt, QTimer, QTime
+from PyQt6.QtGui import QPainter, QIcon, QFont, QColor, QFontDatabase, QStandardItem, QStandardItemModel, QAction
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QWidget, QMenu, QLabel, QVBoxLayout, QSpinBox, \
     QSizePolicy, QLayout, QGroupBox, QComboBox, QHBoxLayout, QTabWidget, QPushButton, \
-    QDialog, QLineEdit, QScrollArea, QStyleFactory, QListView, QStyle, QCheckBox, QColorDialog, QTimeEdit, QAction
+    QDialog, QLineEdit, QScrollArea, QStyleFactory, QListView, QStyle, QCheckBox, QColorDialog, QTimeEdit  #, QAction
 
 from activewindow import WindowType
 
@@ -30,7 +30,7 @@ except ImportError:
 
 ###########
 
-QT_VERSION: int = 5
+QT_VERSION: int = 6
 
 limited = False
 limit = 0  # Возможное колличество времени за день (мин)
@@ -380,7 +380,7 @@ class Timer(QWidget):
         log('runtime')
         global sid
         self.time_show.setFont(font)
-        # self.time_show.setFont(QFont('Segoe UI', 30))
+        self.time_show.setFont(QFont('Segoe UI', 30))
         self.time_show.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         # self.time_show.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
@@ -888,7 +888,7 @@ class Block(QWidget):
         self.setWindowTitle(phrases['block title'])
         self.setWindowIcon(app_icon)
         self.setWindowOpacity(0.8)  # TODO: make this work on Wayland
-        self.setAttribute(Qt.WA_DontCreateNativeAncestors, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
         if is_blocked() and 3 in [eye_save_type, lim_off_type, blocked_hours_shutdown_type]:
             self.showFullScreen()
             self.activateWindow()
@@ -2210,10 +2210,13 @@ if __name__ == '__main__':
     app_icon = QIcon(path.join(base_path, 'icon.ico'))
     app.setDesktopFileName(desktop_file_path)
     app.setWindowIcon(app_icon)
+    app.setApplicationDisplayName(phrases['app name'])
+    app.setApplicationName('Sledilka')
     QFontDatabase.addApplicationFont('Segoe UI.ttf')
-    # app.setApplicationDisplayName(phrases['app name'])
-    # app.setApplicationName('Sledilka')
     font = QFont('Segoe UI', 30)
+    font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, -1.5)
+    font.setBold(False)
+    font.setWeight(40)
 
     pre_start()
     window = Timer()
