@@ -181,7 +181,7 @@ sett = deepcopy(default_sett)  # Словарь сохраняемых пара�
 
 desktop_file = f"""[Desktop Entry]
 Type=Application
-Exec=sleep 5 && cd {base_path} && {'python3 ' + argv[0]}
+Exec=bash -c "sleep 5 && cd '{base_path}' && '{executable}' '{argv[0]}'"
 Path={base_path}
 Icon={base_path}/icon.ico
 StartupNotify=true
