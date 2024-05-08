@@ -5,7 +5,7 @@ This is not parental control, it's self-control time tracker.
 
 ## Quick setup on M OS
 ```
-curl 'https://raw.githubusercontent.com/S0nter/Sledilka/main/scripts/m_os_setup.sh' | bash --norc --noprofile'
+curl 'https://raw.githubusercontent.com/S0nter/Sledilka/main/scripts/m_os_setup.sh' | bash --norc --noprofile
 ```
 
 ## Gallery
