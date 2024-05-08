@@ -1,23 +1,21 @@
 ## What is this?
 Sledilka is a program that runs on boot, monitors the time of computer use, and turns it off according to the rules specified by the user.
 
-Works on "M OS"!
-
 This is not parental control, it's self-control time tracker. 
+
+## Quick setup on M OS
+```
+curl 'https://raw.githubusercontent.com/S0nter/Sledilka/main/scripts/m_os_setup.sh' | bash --norc --noprofile'
+```
 
 ## Gallery
 ![Sledilka](/gallery/Interface.png)
 
-## 1.3
+## 1.4
 
 ### Changes
- - Fixed loguru function path
- - Added new option to control screen time: Blocked hours
- - Wayland time tracking fix (requires dbus and kde/gnome/mint...)
- - Wayland icon fix
- - Removed whitespaces from various places in translations
- - Fixed crash when caused by limits enabling
- - Fixed color dialog (there is current color now)
+ - Fixed .desktop file for linux
+ - Implemented quick setup on M OS
 
 ## How to use?
 ### Install python packages
@@ -42,15 +40,15 @@ You may compile it or use as python package (better)
  - type `cd /D <path you've copied earlier>`
 Run this command:
 ```
-python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt5 --disable-console Sledilka.py
+python -m nuitka --onefile --follow-imports --windows-icon-from-ico=icon.ico --plugin-enable=pyqt6 --disable-console Sledilka.py
 ```
 ### 2) Python installation
 #### 2.1) System installation
  - Change third line to `sudo python3 setup.py build sdist install`
- - Run `setup.sh` file
+ - Run `scripts/setup.sh` file
  - Run `python3 -m Sledilka` in your directory for Sledilka
 #### 2.2) User installation
- - Run `setup.sh` file
+ - Run `scripts/setup.sh` file
  - Run `python3 -m Sledilka` in your directory for Sledilka
 ### 3) Arch linux installation
- - Copy the PKGBUILD file and run `makepkg -sir`
+ - Copy the PKGBUILD file from `scripts` and run `makepkg -sir`
