@@ -2199,8 +2199,8 @@ def limit_should_be_activated() -> bool:
     return limited and (sid >= limit * 60 or sid >= poss[num_days[datetime.date.today()]] * 60)
 
 
-if __name__ == '__main__':
-    # while True:
+def main():
+    global app, app_icon, font, window
     log('\n'*5)
     debug(f'{argv = }')
     lib_import()
@@ -2226,3 +2226,6 @@ if __name__ == '__main__':
         app.exec_()
     else:
         app.exec()
+
+if __name__ == '__main__':
+    main()

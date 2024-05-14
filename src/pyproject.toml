@@ -1,0 +1,35 @@
+[build-system]
+requires = ['hatchling']
+build-backend = 'hatchling.build'
+
+[project]
+name = "Sledilka"
+dependencies = [
+    "loguru",
+    "activewindow",
+    "PyQt6",
+    "PyQt6-Qt6",
+    "PyQt6-sip",
+    "winshell;platform_system=='Windows'",
+    "winshell;platform_system=='win-amd64'"
+]
+version = "1.5"
+description = "A program that monitors screen time"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+]
+
+
+# [tool.hatch.build]
+# include = ['src/Sledilka/*']
+
+[tool.hatch.build.targets.wheel]
+include = ["src/Sledilka/*"]
+sources = ["src"]
+
+[project.scripts]
+sledilka = "Sledilka.Sledilka:main"
