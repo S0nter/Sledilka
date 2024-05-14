@@ -14,6 +14,6 @@ rm -r gallery docs scripts .git
 # Setting up virtual environment with required packages
 cd src
 python -m venv venv
-venv/bin/python -m pip install activewindow importlib datetime PyQt6 loguru
+venv/bin/python -m pip install activewindow datetime PyQt6 loguru
 
 venv/bin/python Sledilka.py
