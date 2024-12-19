@@ -19,18 +19,18 @@ def hiber():
     if platform == 'win32':
         run('shutdown -h')
     elif platform == 'linux':
-        run('loginctl hibernate')
+        run('systemctl hibernate')
 
 
 def shutdown(phrases):
     if platform == 'win32':
         run(f'shutdown -t 10 -s -c {phrases["needs rest from the monitor"]}')
     elif platform == 'linux':
-        run('loginctl poweroff')
+        run('systemctl poweroff')
 
 
 def reboot(phrases):
     if platform == 'win32':
         run(f'shutdown -t 10 -r -c {phrases["needs rest from the monitor"]}')
     elif platform == 'linux':
-        run('loginctl reboot')
+        run('systemctl reboot')
